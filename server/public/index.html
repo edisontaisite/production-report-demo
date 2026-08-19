@@ -24,6 +24,10 @@
   .topbar .close{font-size:22px; color:#444; width:28px;}
   .topbar .title{flex:1; text-align:center; font-size:17px; font-weight:600;}
   .topbar .more{width:28px; text-align:right; color:#444; font-size:20px; cursor:pointer;}
+  .topbar .admin-link{font-size:12px; color:var(--blue); text-decoration:none;
+    padding:3px 9px; border:1px solid var(--blue); border-radius:12px;
+    margin-right:14px; background:var(--card); white-space:nowrap;}
+  .topbar .admin-link:active{opacity:.7;}
   .topbar .url{text-align:center; font-size:11px; color:var(--muted);
     padding-bottom:5px; margin-top:-4px;}
   .accent{height:3px; background:var(--green);}
@@ -102,6 +106,7 @@
     <div class="row">
       <div class="close">✕</div>
       <div class="title">员工产量上报</div>
+      <a class="admin-link" href="admin.html">后台</a>
       <div class="more" id="moreBtn" title="重置演示数据">⋯</div>
     </div>
     <div class="url">演示 · 服务器数据</div>
