@@ -107,9 +107,8 @@
       <div class="close">✕</div>
       <div class="title">员工产量上报</div>
       <a class="admin-link" href="admin.html">后台</a>
-      <div class="more" id="moreBtn" title="重置演示数据">⋯</div>
     </div>
-    <div class="url">演示 · 服务器数据</div>
+    <div class="url">产量上报系统</div>
     <div class="accent"></div>
   </div>
 
@@ -160,10 +159,7 @@
       <span>保存本次提交内容，下次自动填充</span>
     </label>
 
-    <div class="reset-row">
-      <button class="reset-link" id="resetBtn">重置演示数据</button>
-    </div>
-    <div class="demo-note">演示版：数据保存在服务器数据库中，员工端与管理端共享同一份数据。</div>
+    <div class="demo-note">数据实时保存在服务器中，与后台共享。</div>
   </div>
 
   <div class="footer">
@@ -470,18 +466,7 @@ $("#submitBtn").onclick = async () => {
   }
 };
 
-$("#resetBtn").onclick = async () => {
-  if (!confirm("重置演示数据？将清空所有上报记录并恢复初始剩余产量。")) return;
-  try {
-    await api.post('/admin/reset', {});
-    toast("已重置演示数据");
-  } catch (e) {
-    return toast(e.message || "重置失败", 2600);
-  }
-  try { await initData(); } catch (e) {}
-  $("#details").innerHTML=""; rows.clear(); seq=0; recalc(); addRow();
-};
-$("#moreBtn").onclick = () => $("#resetBtn").click();
+
 
 /* ---------- 初始化 ---------- */
 (async function init(){

@@ -1,6 +1,4 @@
 const express = require('express');
-const fs = require('fs');
-const path = require('path');
 const router = express.Router();
 
 router.get('/reports', async (req, res) => {
@@ -121,7 +119,7 @@ router.get('/export', async (req, res) => {
     const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
     
     const reports = await db.runQuery(`
-      SELECT r.report_date, e.id as emp_id, e.name as emp_name, e.factory, e.grp, ri.order_no, ri.proc_name, ri.qty, ri.unit_price, ri.amount, r.subtotal
+      SELECT r.report_date, e.id as emp_id, e.name as emp_name, e.factory, e.grp, ri.order_no, ri.proc_code, ri.proc_name, ri.qty, ri.rqty, ri.unit_price, ri.amount, r.subtotal
       FROM reports r
       LEFT JOIN employees e ON r.emp_id = e.id
       LEFT JOIN report_items ri ON r.id = ri.report_id
@@ -129,13 +127,17 @@ router.get('/export', async (req, res) => {
       ORDER BY r.report_date DESC, e.id
     `, params);
     
-    const headers = ['日期', '工号', '姓名', '工厂', '组别', '订单号', '工序', '产量', '单价', '金额', '小计'];
+    const headers = ['日期', '工号', '姓名', '工厂', '组别', '订单号', '工序代码', '工序', '产量', '返工数', '单价', '金额', '小计'];
+    const csvCell = v => {
+      const s = String(v ?? '');
+      return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
     const rows = reports.map(r => [
       r.report_date, r.emp_id, r.emp_name, r.factory, r.grp,
-      r.order_no, r.proc_name, r.qty, r.unit_price, r.amount, r.subtotal
+      r.order_no, r.proc_code, r.proc_name, r.qty, r.rqty, r.unit_price, r.amount, r.subtotal
     ]);
     
-    const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
+    const csv = [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n');
     
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="产量报表_${start_date || '全量'}_${end_date || '至今'}.csv"`);
@@ -406,28 +408,6 @@ router.get('/group-report', async (req, res) => {
     res.json({ ok: true, date, data: rows });
   } catch (err) {
     console.error('获取组别日报失败:', err);
-    res.status(500).json({ ok: false, error: '服务器错误' });
-  }
-});
-
-router.post('/reset', async (req, res) => {
-  const db = req.app.locals.db;
-
-  try {
-    // 清空业务数据（保留员工/制单主数据）
-    await db.runQuery('DELETE FROM report_items');
-    await db.runQuery('DELETE FROM reports');
-    await db.runQuery('DELETE FROM processes');
-
-    // 重新执行种子数据（恢复工序初始剩余产量）
-    const seed = fs.readFileSync(path.join(__dirname, '..', 'db', 'seed.sql'), 'utf8');
-    await new Promise((resolve, reject) => {
-      db.db().exec(seed, (err) => (err ? reject(err) : resolve()));
-    });
-
-    res.json({ ok: true, message: '演示数据已重置' });
-  } catch (err) {
-    console.error('重置演示数据失败:', err);
     res.status(500).json({ ok: false, error: '服务器错误' });
   }
 });

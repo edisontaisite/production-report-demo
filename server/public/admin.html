@@ -67,6 +67,30 @@
     font-size:14px; z-index:100; display:none;}
   .toast.show{display:block;}
 
+  /* 上报详情弹窗 */
+  .modal-overlay{position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:200;
+    display:none; align-items:center; justify-content:center; padding:16px;}
+  .modal-overlay.show{display:flex;}
+  .modal{background:#fff; border-radius:12px; width:100%; max-width:560px; max-height:85vh;
+    display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 30px rgba(0,0,0,.2);}
+  .modal-head{padding:14px 20px; border-bottom:1px solid #eee; display:flex; align-items:center; justify-content:space-between;}
+  .modal-head h2{font-size:16px; margin:0;}
+  .modal-close{background:none; border:none; font-size:22px; color:#999; cursor:pointer; line-height:1; padding:0 4px;}
+  .modal-close:hover{color:#333;}
+  .modal-body{padding:20px; overflow-y:auto;}
+  .report-meta{display:grid; grid-template-columns:1fr 1fr; gap:10px 24px; margin-bottom:16px;}
+  .report-meta .item{font-size:13px;}
+  .report-meta .item .k{color:#999; margin-right:8px;}
+  .report-meta .item .v{font-weight:500;}
+  .detail-table{width:100%; border-collapse:collapse; margin-bottom:12px;}
+  .detail-table th{background:#fafafa; font-weight:500; color:#666; font-size:12px; text-align:left; padding:8px 10px; border-bottom:1px solid #eee; white-space:nowrap;}
+  .detail-table td{padding:8px 10px; border-bottom:1px solid #f0f0f0; font-size:13px;}
+  .detail-table td.num{text-align:right;}
+  .report-summary{display:flex; justify-content:flex-end; gap:24px; font-size:14px; padding-top:4px;}
+  .report-summary .lbl{color:#666;}
+  .report-summary .val{font-weight:600; color:#12b886;}
+  .modal-loading{padding:40px; text-align:center; color:#999;}
+
   .tab-content{display:none;}
   .tab-content.active{display:block;}
 
@@ -366,6 +390,19 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- 上报详情弹窗 -->
+<div class="modal-overlay" id="reportModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>上报详情</h2>
+      <button class="modal-close" onclick="closeReportModal()">✕</button>
+    </div>
+    <div class="modal-body" id="reportModalBody">
+      <div class="modal-loading">加载中...</div>
+    </div>
+  </div>
+</div>
+
 <script>
 const $ = (s, r=document) => r.querySelector(s);
 const money = n => (n || 0).toFixed(2);
@@ -468,9 +505,65 @@ async function loadReports(page) {
   }
 }
 
-function viewReport(id) {
-  alert('查看详情功能开发中...');
+/* 上报详情弹窗 */
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function viewReport(id) {
+  const overlay = $("#reportModal");
+  $("#reportModalBody").innerHTML = '<div class="modal-loading">加载中...</div>';
+  overlay.classList.add("show");
+  try {
+    const res = await API.get('/reports/' + id);
+    if (!res.ok) throw new Error(res.error || '加载失败');
+    const r = res.data;
+    const totalQty = r.items.reduce((s, i) => s + (i.qty || 0), 0);
+    const totalRqty = r.items.reduce((s, i) => s + (i.rqty || 0), 0);
+    const fpy = totalQty > 0 ? (totalQty - totalRqty) / totalQty * 100 : 0;
+    $("#reportModalBody").innerHTML = `
+      <div class="report-meta">
+        <div class="item"><span class="k">员工</span><span class="v">${esc(r.emp_name || '-')}（${esc(r.emp_id)}）</span></div>
+        <div class="item"><span class="k">上报日期</span><span class="v">${esc(r.report_date)}</span></div>
+        <div class="item"><span class="k">工厂</span><span class="v">${esc(r.factory || '-')}</span></div>
+        <div class="item"><span class="k">组别</span><span class="v">${esc(r.grp || '-')}</span></div>
+        <div class="item"><span class="k">上报时间</span><span class="v">${esc(r.created_at || '-')}</span></div>
+      </div>
+      <table class="detail-table">
+        <thead>
+          <tr><th>订单号</th><th>工序</th><th class="num">产量</th><th class="num">返工</th><th class="num">单价</th><th class="num">金额</th></tr>
+        </thead>
+        <tbody>
+          ${r.items.map(i => `
+            <tr>
+              <td>${esc(i.order_no)}</td>
+              <td>${esc(i.proc_code)} ${esc(i.proc_name)}</td>
+              <td class="num">${i.qty}</td>
+              <td class="num">${i.rqty || 0}</td>
+              <td class="num">¥${money(i.unit_price)}</td>
+              <td class="num amount">¥${money(i.amount)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+      <div class="report-summary">
+        <div><span class="lbl">总产量：</span><span class="val">${totalQty}</span></div>
+        <div><span class="lbl">FPY：</span><span class="val">${fpy.toFixed(1)}%</span></div>
+        <div><span class="lbl">工价合计：</span><span class="val">¥${money(r.subtotal)}</span></div>
+      </div>`;
+  } catch (err) {
+    $("#reportModalBody").innerHTML = `<div class="modal-loading">${esc(err.message || '加载失败')}</div>`;
+  }
 }
+
+function closeReportModal() {
+  $("#reportModal").classList.remove("show");
+}
+
+// 点遮罩或按 Esc 关闭
+$("#reportModal").addEventListener("click", (e) => {
+  if (e.target === $("#reportModal")) closeReportModal();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeReportModal();
+});
 
 function exportData() {
   const start = $("#filterStart").value;
