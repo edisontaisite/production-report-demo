@@ -32,6 +32,10 @@
   .card-header{padding:16px 20px; border-bottom:1px solid #eee; display:flex; align-items:center; justify-content:space-between;}
   .card-header h2{font-size:16px; margin:0;}
   .card-body{padding:20px;}
+  /* 表格容器：窄屏可横向滑动，避免文字竖排 */
+  .table-wrap{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  .table-wrap table{min-width:720px;}
+  .table-wrap table td, .table-wrap table th{white-space:nowrap;}
 
   .filters{display:flex; gap:12px; flex-wrap:wrap; align-items:center;}
   .filter-item{display:flex; align-items:center; gap:8px;}
@@ -98,6 +102,24 @@
   .order-card .stats{display:flex; gap:16px; font-size:12px; color:#888;}
   .process-list{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
   .process-tag{background:#fff; border:1px solid #e0e0e0; border-radius:4px; padding:4px 8px; font-size:12px;}
+
+  /* 移动端适配（小程序 web-view / 手机浏览器） */
+  @media (max-width: 640px){
+    .container{padding:12px;}
+    .header{padding:12px 16px;}
+    .header h1{font-size:16px;}
+    .header-actions .btn-secondary{height:32px; padding:0 10px; font-size:13px;}
+    .nav{padding:0 6px; gap:0; overflow-x:auto;}
+    .nav-item{padding:10px 10px; font-size:13px; white-space:nowrap;}
+    .filters{gap:8px;}
+    .filters .filter-item{flex:1 1 auto;}
+    .filter-item input, .filter-item select{width:100% !important; min-width:0;}
+    .order-form{display:flex; flex-wrap:wrap; gap:8px;}
+    .order-form input, .order-form select{width:46%;}
+    .employee-form{gap:8px;}
+    .employee-form input{width:46%;}
+    .proc-actions{flex-wrap:wrap;}
+  }
 </style>
 </head>
 <body>
@@ -141,7 +163,7 @@
           <button class="btn-secondary" onclick="exportData()">导出CSV</button>
         </div>
       </div>
-      <div class="card-body" style="padding:0">
+      <div class="card-body table-wrap" style="padding:0">
         <table>
           <thead>
             <tr>
@@ -184,7 +206,7 @@
       <div class="card-header">
         <h2>各订单统计</h2>
       </div>
-      <div class="card-body" style="padding:0">
+      <div class="card-body table-wrap" style="padding:0">
         <table>
           <thead>
             <tr>
@@ -206,7 +228,7 @@
       <div class="card-header">
         <h2>各员工统计</h2>
       </div>
-      <div class="card-body" style="padding:0">
+      <div class="card-body table-wrap" style="padding:0">
         <table>
           <thead>
             <tr>
@@ -252,7 +274,7 @@
       <div class="card-header">
         <h2>添加订单</h2>
       </div>
-      <div class="card-body">
+      <div class="card-body table-wrap">
         <div class="order-form">
           <input type="text" id="newOrderNo" placeholder="订单号（必填）">
           <input type="text" id="newStyleNo" placeholder="款号（可选）">
