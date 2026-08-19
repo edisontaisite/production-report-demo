@@ -1,6 +1,12 @@
 Page({
   data: {
-    // 网页管理后台地址（与小程序共用同一后端与数据）
     url: 'https://production-report-demo-jswx.onrender.com/admin.html'
+  },
+
+  copyUrl() {
+    wx.setClipboardData({
+      data: this.data.url,
+      success: () => wx.showToast({ title: '网址已复制', icon: 'success' })
+    });
   }
 });

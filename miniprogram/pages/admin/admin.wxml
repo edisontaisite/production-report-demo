@@ -1,1 +1,18 @@
-<web-view src="{{url}}"></web-view>
+<view class="page">
+  <view class="card">
+    <view class="icon">📊</view>
+    <view class="title">管理后台</view>
+    <view class="desc">当前小程序为个人主体，暂不支持内嵌网页。请复制以下网址，用浏览器打开管理后台：</view>
+    <view class="url-box">
+      <text class="url" selectable>{{url}}</text>
+    </view>
+    <button class="btn-copy" bindtap="copyUrl">复制网址</button>
+  </view>
+
+  <view class="card">
+    <view class="tip-title">使用说明</view>
+    <view class="tip-line">• 员工产量上报：在本小程序完成</view>
+    <view class="tip-line">• 员工 / 订单 / 工序管理、报表统计、CSV 导出：请使用网页管理后台</view>
+    <view class="tip-line">• 两端数据实时同步，无需等待</view>
+  </view>
+</view>

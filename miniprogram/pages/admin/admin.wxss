@@ -1,1 +1,72 @@
-/* web-view 页面无需样式 */
+.page {
+  padding: 40rpx 24rpx;
+}
+
+.card {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 40rpx 32rpx;
+  margin-bottom: 24rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.icon {
+  font-size: 64rpx;
+}
+
+.title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1f2329;
+}
+
+.desc {
+  font-size: 14px;
+  color: #556;
+  line-height: 1.7;
+  text-align: center;
+}
+
+.url-box {
+  background: #f3f5f8;
+  border-radius: 10rpx;
+  padding: 18rpx 24rpx;
+  max-width: 100%;
+}
+
+.url {
+  font-size: 13px;
+  color: #3b82f6;
+  word-break: break-all;
+}
+
+.btn-copy {
+  background: #12b886;
+  color: #fff;
+  border-radius: 40rpx;
+  font-size: 15px;
+  font-weight: 600;
+  margin: 10rpx 0 0;
+  padding: 0 60rpx;
+}
+
+.btn-copy::after {
+  border: none;
+}
+
+.tip-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2329;
+  align-self: flex-start;
+}
+
+.tip-line {
+  font-size: 13px;
+  color: #556;
+  line-height: 1.8;
+  align-self: flex-start;
+}
