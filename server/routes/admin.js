@@ -1,4 +1,6 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const router = express.Router();
 
 router.get('/reports', async (req, res) => {
@@ -216,6 +218,28 @@ router.post('/orders', async (req, res) => {
       console.error('添加制单失败:', err);
       res.status(500).json({ ok: false, error: '服务器错误' });
     }
+  }
+});
+
+router.post('/reset', async (req, res) => {
+  const db = req.app.locals.db;
+
+  try {
+    // 清空业务数据（保留员工/制单主数据）
+    await db.runQuery('DELETE FROM report_items');
+    await db.runQuery('DELETE FROM reports');
+    await db.runQuery('DELETE FROM processes');
+
+    // 重新执行种子数据（恢复工序初始剩余产量）
+    const seed = fs.readFileSync(path.join(__dirname, '..', 'db', 'seed.sql'), 'utf8');
+    await new Promise((resolve, reject) => {
+      db.db().exec(seed, (err) => (err ? reject(err) : resolve()));
+    });
+
+    res.json({ ok: true, message: '演示数据已重置' });
+  } catch (err) {
+    console.error('重置演示数据失败:', err);
+    res.status(500).json({ ok: false, error: '服务器错误' });
   }
 });
 

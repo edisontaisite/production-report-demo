@@ -1,0 +1,24 @@
+# 本地 / 服务器一键运行（内部测试推荐）
+# 用法：
+#   docker-compose up -d --build   # 构建并后台启动
+#   docker-compose logs -f         # 查看日志
+#   docker-compose down            # 停止（数据保留在 volume 中）
+# 访问：http://localhost:3000 （员工端） /admin.html （管理端）
+
+services:
+  production-report:
+    build: .
+    image: production-report:latest
+    container_name: production-report
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_PATH: /data/production.db
+    volumes:
+      - production-data:/data
+
+volumes:
+  production-data:

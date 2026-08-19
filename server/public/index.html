@@ -104,7 +104,7 @@
       <div class="title">员工产量上报</div>
       <div class="more" id="moreBtn" title="重置演示数据">⋯</div>
     </div>
-    <div class="url">演示 · 本地数据</div>
+    <div class="url">演示 · 服务器数据</div>
     <div class="accent"></div>
   </div>
 
@@ -163,7 +163,7 @@
     <div class="reset-row">
       <button class="reset-link" id="resetBtn">重置演示数据</button>
     </div>
-    <div class="demo-note">演示版：数据保存在你当前浏览器本地，各自独立、互不影响。</div>
+    <div class="demo-note">演示版：数据保存在服务器数据库中，员工端与管理端共享同一份数据。</div>
   </div>
 
   <div class="footer">
@@ -183,110 +183,66 @@ const toast = (msg, ms=1800) => {
   clearTimeout(toast._t); toast._t = setTimeout(()=>t.classList.remove("show"), ms);
 };
 
-/* ---------- 种子数据（原后端 seed 的前端版） ---------- */
-const SEED = {
-  employees: {
-    "1001": {name:"张伟", factory:"华南一厂", grp:"缝纫A组"},
-    "1002": {name:"李娜", factory:"华南一厂", grp:"缝纫B组"},
-    "1003": {name:"王芳", factory:"华东二厂", grp:"裁剪组"},
-    "1004": {name:"刘洋", factory:"华东二厂", grp:"后整组"},
+/* ---------- API 层（对接后端） ---------- */
+const api = {
+  async get(path) {
+    const res = await fetch('/api' + path);
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || '请求失败');
+    return json.data;
   },
-  orders: [
-    {order_no:"MO-20260801", style_no:"SH-100", product:"男士长袖衬衫"},
-    {order_no:"MO-20260802", style_no:"DR-220", product:"女士连衣裙"},
-    {order_no:"MO-20260803", style_no:"TS-330", product:"儿童纯棉T恤"},
-  ],
-  // 制单工序基准（剩余产量的初始值）
-  processes: [
-    {order_no:"MO-20260801", proc_code:"GX01", proc_name:"车领",    mnemonic:"CL",   unit_price:0.35, remaining:800},
-    {order_no:"MO-20260801", proc_code:"GX02", proc_name:"上袖",    mnemonic:"SX",   unit_price:0.42, remaining:650},
-    {order_no:"MO-20260801", proc_code:"GX03", proc_name:"锁边",    mnemonic:"SB",   unit_price:0.28, remaining:1200},
-    {order_no:"MO-20260801", proc_code:"GX07", proc_name:"钉纽",    mnemonic:"DN",   unit_price:0.15, remaining:950},
-    {order_no:"MO-20260802", proc_code:"GX04", proc_name:"车缝侧骨", mnemonic:"CFCG", unit_price:0.55, remaining:500},
-    {order_no:"MO-20260802", proc_code:"GX05", proc_name:"上拉链",  mnemonic:"SLL",  unit_price:0.65, remaining:300},
-    {order_no:"MO-20260802", proc_code:"GX08", proc_name:"钉扣",    mnemonic:"DK",   unit_price:0.18, remaining:900},
-    {order_no:"MO-20260803", proc_code:"GX02", proc_name:"上袖",    mnemonic:"SX",   unit_price:0.30, remaining:1500},
-    {order_no:"MO-20260803", proc_code:"GX03", proc_name:"锁边",    mnemonic:"SB",   unit_price:0.22, remaining:2000},
-    {order_no:"MO-20260803", proc_code:"GX06", proc_name:"印花",    mnemonic:"YH",   unit_price:0.40, remaining:700},
-  ],
+  async post(path, body) {
+    const res = await fetch('/api' + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || '请求失败');
+    return json;
+  }
 };
 
-/* ---------- 本地存储层（替代 SQLite） ---------- */
-const LS_KEY = "prod_report_state_v2";
-let STATE = loadState();
-
-function freshState() {
-  const remaining = {};
-  for (const p of SEED.processes) remaining[p.order_no + "|" + p.proc_code] = p.remaining;
-  return { remaining, reports: [], lastByEmp: {} };
+let ORDERS = []; // 制单列表缓存（启动时加载）
+async function initData() {
+  ORDERS = await api.get('/orders');
 }
-function loadState() {
+
+/* ---------- 业务函数（对接后端 API） ---------- */
+async function getEmployee(id) {
+  try { return await api.get('/employees/' + encodeURIComponent(id)); }
+  catch (e) { return null; }
+}
+async function getProcesses(orderNo) {
+  return await api.get('/orders/' + encodeURIComponent(orderNo) + '/processes');
+}
+async function submitReport(payload) {
+  // 返回 {ok, report_id, subtotal, items}
+  return await api.post('/reports', {
+    emp_id: payload.emp_id,
+    report_date: payload.report_date,
+    items: payload.items
+  });
+}
+async function getLast(emp_id) {
   try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) return JSON.parse(raw);
+    const data = await api.get('/reports/history/' + encodeURIComponent(emp_id) + '?limit=1');
+    if (data && data.length && data[0].items && data[0].items.length) {
+      return { found: true, items: data[0].items.map(it => ({ order_no: it.order_no, proc_code: it.proc_code, qty: it.qty })) };
+    }
   } catch (e) {}
-  const s = freshState(); persist(s); return s;
-}
-function persist(s = STATE) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(s)); } catch (e) {}
-}
-
-/* ---------- 业务函数（对应原后端 API） ---------- */
-function getEmployee(id) { return SEED.employees[id] || null; }
-function getOrders() { return SEED.orders; }
-function getProcesses(orderNo) {
-  return SEED.processes
-    .filter(p => p.order_no === orderNo)
-    .map(p => ({...p, remaining: STATE.remaining[p.order_no + "|" + p.proc_code]}));
-}
-function findProc(orderNo, procCode) {
-  const base = SEED.processes.find(p => p.order_no === orderNo && p.proc_code === procCode);
-  if (!base) return null;
-  return {...base, remaining: STATE.remaining[orderNo + "|" + procCode]};
-}
-function submitReport(payload) {
-  const {emp_id, report_date, items, save_autofill} = payload;
-  if (!getEmployee(emp_id)) return {ok:false, error:"员工工号不存在"};
-  const resolved = [];
-  for (let i=0; i<items.length; i++) {
-    const it = items[i], n = i+1;
-    const pr = findProc(it.order_no, it.proc_code);
-    if (!pr) return {ok:false, error:`第${n}行：制单号/工序代码不匹配`};
-    const qty = Number(it.qty);
-    if (!(qty > 0)) return {ok:false, error:`第${n}行：产量必须大于0`};
-    if (qty > pr.remaining) return {ok:false, error:`第${n}行：产量 ${fmtQty(qty)} 超过剩余产量 ${fmtQty(pr.remaining)}`};
-    resolved.push({pr, qty});
-  }
-  let subtotal = 0;
-  const result = [];
-  for (const {pr, qty} of resolved) {
-    const amount = Math.round(pr.unit_price*qty*100)/100;
-    subtotal += amount;
-    STATE.remaining[pr.order_no + "|" + pr.proc_code] = Math.round((pr.remaining - qty)*100)/100;
-    result.push({order_no:pr.order_no, proc_code:pr.proc_code, qty, amount});
-  }
-  subtotal = Math.round(subtotal*100)/100;
-  const report = {id: STATE.reports.length+1, emp_id, report_date, subtotal, items: result, ts: Date.now()};
-  STATE.reports.push(report);
-  if (save_autofill) STATE.lastByEmp[emp_id] = items.map(it => ({order_no:it.order_no, proc_code:it.proc_code, qty:Number(it.qty)}));
-  persist();
-  return {ok:true, report_id:report.id, subtotal, items:result};
-}
-function getLast(emp_id) {
-  const items = STATE.lastByEmp[emp_id];
-  return items && items.length ? {found:true, items} : {found:false};
+  return { found: false };
 }
 
 /* ---------- 界面逻辑 ---------- */
-const ORDERS = getOrders();
 let seq = 0;
 const rows = new Map();
 
-function loadEmployee() {
+async function loadEmployee() {
   const id = $("#empId").value.trim();
   const setRO = (sel, val) => { const el=$(sel); el.textContent=val||"暂无内容"; el.classList.toggle("empty", !val); };
   if (!id) { setRO("#empName",""); setRO("#empFactory",""); setRO("#empGrp",""); $("#empErr").classList.remove("show"); return; }
-  const e = getEmployee(id);
+  const e = await getEmployee(id);
   if (e) { setRO("#empName",e.name); setRO("#empFactory",e.factory); setRO("#empGrp",e.grp); $("#empErr").classList.remove("show"); }
   else { setRO("#empName",""); setRO("#empFactory",""); setRO("#empGrp",""); $("#empErr").classList.add("show"); }
 }
@@ -352,27 +308,33 @@ function addRow(preset) {
     const collapsed = $(".detail-body", el).classList.toggle("collapsed");
     ev.currentTarget.innerHTML = collapsed ? "⌄ 展开" : "⌃ 收起";
   };
-  orderSel.onchange = () => { orderSel.classList.remove("placeholder-opt"); fillProcOptions(el, orderSel.value, null); clearProcDetail(el); };
-  procSel.onchange = () => { procSel.classList.remove("placeholder-opt"); applyProc(el, orderSel.value, procSel.value); };
+  orderSel.onchange = () => { orderSel.classList.remove("placeholder-opt"); clearProcDetail(el); fillProcOptions(el, orderSel.value, null); };
+  procSel.onchange = () => { procSel.classList.remove("placeholder-opt"); applyProc(el); };
   $(".js-qty", el).oninput = () => { validateRow(el); recalc(); };
 
   if (preset && preset.order_no) {
-    fillProcOptions(el, preset.order_no, preset.proc_code);
     orderSel.classList.remove("placeholder-opt");
-    if (preset.proc_code) {
-      procSel.classList.remove("placeholder-opt");
-      applyProc(el, preset.order_no, preset.proc_code);
-      if (preset.qty != null) { $(".js-qty", el).value = preset.qty; validateRow(el); recalc(); }
-    }
+    fillProcOptions(el, preset.order_no, preset.proc_code).then(() => {
+      if (preset.proc_code) {
+        procSel.classList.remove("placeholder-opt");
+        applyProc(el);
+        if (preset.qty != null) { $(".js-qty", el).value = preset.qty; validateRow(el); recalc(); }
+      }
+    });
   }
   return el;
 }
 
-function fillProcOptions(el, orderNo, selectedCode) {
+async function fillProcOptions(el, orderNo, selectedCode) {
   const procSel = $(".js-proc", el);
   procSel.innerHTML = `<option value="" ${selectedCode?"":"selected"} disabled>请选择</option>`;
+  const rec = rows.get(+el.dataset.id);
+  rec.procs = [];
   if (!orderNo) return;
-  for (const p of getProcesses(orderNo)) {
+  try {
+    rec.procs = await getProcesses(orderNo);
+  } catch (e) { toast(e.message, 2600); return; }
+  for (const p of rec.procs) {
     const opt = document.createElement("option");
     opt.value = p.proc_code; opt.textContent = p.proc_code + " " + p.proc_name;
     if (selectedCode === p.proc_code) opt.selected = true;
@@ -388,14 +350,16 @@ function clearProcDetail(el) {
   rows.get(+el.dataset.id).proc = null; validateRow(el); recalc();
 }
 
-function applyProc(el, orderNo, procCode) {
+function applyProc(el) {
+  const rec = rows.get(+el.dataset.id);
+  const orderNo = $(".js-order", el).value, procCode = $(".js-proc", el).value;
   if (!orderNo || !procCode) return;
-  const p = findProc(orderNo, procCode);
+  const p = (rec.procs || []).find(x => x.proc_code === procCode);
   if (!p) return;
   const put = (sel, val) => { const x=$(sel,el); x.textContent=val; x.classList.remove("empty"); };
   put(".js-name", p.proc_name); put(".js-price", money(p.unit_price)); put(".js-remaining", fmtQty(p.remaining));
   const mn = $(".js-mnemonic", el); if (!mn.value) mn.value = p.mnemonic || "";
-  rows.get(+el.dataset.id).proc = p; validateRow(el); recalc();
+  rec.proc = p; validateRow(el); recalc();
 }
 
 function validateRow(el) {
@@ -436,7 +400,7 @@ $("#addTop").onclick = () => addRow();
 $("#empId").addEventListener("change", loadEmployee);
 $("#empId").addEventListener("blur", loadEmployee);
 
-$("#submitBtn").onclick = () => {
+$("#submitBtn").onclick = async () => {
   const empId = $("#empId").value.trim();
   if (!empId) return toast("请填写员工工号");
   if ($("#empName").classList.contains("empty")) return toast("员工工号无效");
@@ -451,26 +415,41 @@ $("#submitBtn").onclick = () => {
   }
   if (!items.length) return toast("请至少添加一条产量明细");
 
-  const res = submitReport({emp_id:empId, report_date:$("#reportDate").value, save_autofill:$("#saveAutofill").checked, items});
-  if (!res.ok) return toast(res.error, 2600);
-  toast(`提交成功 ✓  工价小计 ¥${money(res.subtotal)}`, 2600);
-  $("#details").innerHTML=""; rows.clear(); seq=0; recalc();
-  if ($("#saveAutofill").checked) { const last = getLast(empId); if (last.found) { last.items.forEach(it => addRow(it)); return; } }
-  addRow();
+  const btn = $("#submitBtn"); btn.disabled = true;
+  try {
+    const res = await submitReport({emp_id:empId, report_date:$("#reportDate").value, items});
+    toast(`提交成功 ✓  工价小计 ¥${money(res.subtotal)}`, 2600);
+    $("#details").innerHTML=""; rows.clear(); seq=0; recalc();
+    if ($("#saveAutofill").checked) {
+      const last = await getLast(empId);
+      if (last.found) { last.items.forEach(it => addRow(it)); return; }
+    }
+    addRow();
+  } catch (e) {
+    toast(e.message || "提交失败", 2600);
+  } finally {
+    btn.disabled = false;
+  }
 };
 
-$("#resetBtn").onclick = () => {
+$("#resetBtn").onclick = async () => {
   if (!confirm("重置演示数据？将清空所有上报记录并恢复初始剩余产量。")) return;
-  STATE = freshState(); persist();
+  try {
+    await api.post('/admin/reset', {});
+    toast("已重置演示数据");
+  } catch (e) {
+    return toast(e.message || "重置失败", 2600);
+  }
+  try { await initData(); } catch (e) {}
   $("#details").innerHTML=""; rows.clear(); seq=0; recalc(); addRow();
-  toast("已重置演示数据");
 };
 $("#moreBtn").onclick = () => $("#resetBtn").click();
 
 /* ---------- 初始化 ---------- */
-(function init(){
+(async function init(){
   const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
   $("#reportDate").value = d.toISOString().slice(0,10);
+  try { await initData(); } catch (e) { toast("加载制单数据失败：" + e.message, 3000); }
   addRow();
 })();
 </script>
