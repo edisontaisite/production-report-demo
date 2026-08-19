@@ -161,7 +161,7 @@ Page({
       })
     }, () => {
       this.recalc();
-      this.validateQty(id);
+      this.validateAll();
     });
   },
 
@@ -169,7 +169,7 @@ Page({
     const id = e.currentTarget.dataset.id;
     this.setData({ rows: this.updateRow(id, { qty: e.detail.value }) }, () => {
       this.recalc();
-      this.validateQty(id);
+      this.validateAll();
     });
   },
 
@@ -194,10 +194,25 @@ Page({
     let qtyErr = '';
     if (row.procName && row.qty !== '' && (isNaN(qty) || qty <= 0)) {
       qtyErr = '产量必须大于 0';
-    } else if (row.procName && !isNaN(qty) && qty > row.remaining) {
-      qtyErr = '超过剩余产量 ' + row.remaining;
+    } else if (row.procName && !isNaN(qty) && qty > 0) {
+      // 同一订单+工序分行输入时，按合计与剩余产量比较
+      let total = 0;
+      for (const r of this.data.rows) {
+        if (r.procName && r.orderNo === row.orderNo && r.procIdx === row.procIdx) {
+          const q = parseFloat(r.qty);
+          if (!isNaN(q) && q > 0) total += q;
+        }
+      }
+      if (total > row.remaining) {
+        qtyErr = '合计 ' + total + ' 超过剩余产量 ' + row.remaining;
+      }
     }
     this.setData({ rows: this.updateRow(id, { qtyErr }) });
+  },
+
+  // 重新校验所有行（合计校验互相影响）
+  validateAll() {
+    for (const r of this.data.rows) this.validateQty(r.id);
   },
 
   recalc() {

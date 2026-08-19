@@ -397,7 +397,15 @@ function validateRow(el) {
   errEl.classList.remove("show");
   if (!rec.proc || qtyEl.value === "") return true;
   if (isNaN(qty) || qty <= 0) { errEl.textContent="产量必须大于0"; errEl.classList.add("show"); return false; }
-  if (qty > rec.proc.remaining) { errEl.textContent=`超过剩余产量 ${fmtQty(rec.proc.remaining)}`; errEl.classList.add("show"); return false; }
+  // 同一订单+工序分行输入时，按合计与剩余产量比较
+  let total = 0;
+  for (const [, r] of rows) {
+    if (r.proc && r.proc.order_no === rec.proc.order_no && r.proc.proc_code === rec.proc.proc_code) {
+      const q = parseFloat($(".js-qty", r.el).value);
+      if (!isNaN(q) && q > 0) total += q;
+    }
+  }
+  if (total > rec.proc.remaining) { errEl.textContent=`合计 ${fmtQty(total)} 超过剩余产量 ${fmtQty(rec.proc.remaining)}`; errEl.classList.add("show"); return false; }
   return true;
 }
 
@@ -408,6 +416,7 @@ function recalc() {
   for (const [,rec] of rows) {
     const qty = parseFloat($(".js-qty", rec.el).value);
     if (rec.proc && !isNaN(qty) && qty>0) { sum += rec.proc.unit_price*qty; has=true; }
+    validateRow(rec.el); // 刷新合计校验提示
   }
   const el = $("#subtotal");
   el.textContent = has ? money(sum) : "暂无内容";

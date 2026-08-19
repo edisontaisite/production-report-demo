@@ -12,16 +12,6 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ ok: false, error: '至少需要一条产量明细' });
   }
   
-  // 同一单内订单号+工序不能重复（避免重复扣减剩余产量）
-  const seen = new Set();
-  for (let i = 0; i < items.length; i++) {
-    const key = items[i].order_no + '|' + items[i].proc_code;
-    if (seen.has(key)) {
-      return res.status(400).json({ ok: false, error: `第${i + 1}行：同一订单号的同一工序不能重复添加` });
-    }
-    seen.add(key);
-  }
-  
   try {
     const result = await db.runTransaction(async ({ run, all }) => {
       const employees = await all('SELECT * FROM employees WHERE id = ?', [emp_id]);
@@ -29,9 +19,8 @@ router.post('/', async (req, res) => {
         throw new Error('员工编号不存在');
       }
       
-      let subtotal = 0;
-      const resolvedItems = [];
-      
+      // 同一订单+工序分行输入时按合计校验（避免各行独立通过、合计溢出）
+      const aggMap = new Map();
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
         const n = i + 1;
@@ -41,38 +30,52 @@ router.post('/', async (req, res) => {
         const qty = Number(item.qty);
         if (!(qty > 0)) throw new Error(`第${n}行：产量必须大于0`);
         
-        // 返工数（可选，用于 FPY 计算）
         const rqty = item.rqty !== undefined && item.rqty !== null && item.rqty !== ''
           ? Number(item.rqty) : 0;
         if (isNaN(rqty) || rqty < 0) throw new Error(`第${n}行：返工数不合法`);
-        if (rqty > qty) throw new Error(`第${n}行：返工数不能超过产量`);
+        
+        const key = item.order_no + '|' + item.proc_code;
+        if (!aggMap.has(key)) {
+          aggMap.set(key, { order_no: item.order_no, proc_code: item.proc_code, qty: 0, rqty: 0 });
+        }
+        const agg = aggMap.get(key);
+        agg.qty += qty;
+        agg.rqty += rqty;
+      }
+      
+      // 逐项校验并生成明细
+      let subtotal = 0;
+      const resolvedItems = [];
+      for (const agg of aggMap.values()) {
+        if (agg.rqty > agg.qty) {
+          throw new Error(`工序 ${agg.proc_code}：返工数合计 ${agg.rqty} 超过产量合计 ${agg.qty}`);
+        }
         
         const processes = await all(
           'SELECT * FROM processes WHERE order_no = ? AND proc_code = ?',
-          [item.order_no, item.proc_code]
+          [agg.order_no, agg.proc_code]
         );
-        
         if (processes.length === 0) {
-          throw new Error(`第${n}行：订单号/工序代码不匹配`);
+          throw new Error(`订单号 ${agg.order_no} / 工序代码 ${agg.proc_code} 不匹配`);
         }
         
         const process = processes[0];
-        if (qty > process.remaining) {
-          throw new Error(`第${n}行：产量 ${qty} 超过剩余产量 ${process.remaining}`);
+        if (agg.qty > process.remaining) {
+          throw new Error(`工序 ${agg.proc_code}：合计产量 ${agg.qty} 超过剩余产量 ${process.remaining}`);
         }
         
-        const amount = Math.round(process.unit_price * qty * 100) / 100;
+        const amount = Math.round(process.unit_price * agg.qty * 100) / 100;
         subtotal += amount;
         
         resolvedItems.push({
-          order_no: item.order_no,
-          proc_code: item.proc_code,
+          order_no: agg.order_no,
+          proc_code: agg.proc_code,
           proc_name: process.proc_name,
-          qty,
-          rqty,
+          qty: agg.qty,
+          rqty: agg.rqty,
           unit_price: process.unit_price,
           amount: amount,
-          new_remaining: process.remaining - qty
+          new_remaining: Math.round((process.remaining - agg.qty) * 100) / 100
         });
       }
       
