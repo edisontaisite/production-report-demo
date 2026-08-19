@@ -73,6 +73,14 @@
   .employee-card{background:#fafafa; border-radius:8px; padding:14px; display:flex; justify-content:space-between; align-items:center;}
   .employee-card .info .name{font-weight:500; margin-bottom:4px;}
   .employee-card .info .meta{font-size:12px; color:#888;}
+  .employee-card .ops{display:flex; gap:6px; align-items:center; flex-shrink:0;}
+  .btn-mini{height:28px; padding:0 12px; border:1px solid #ddd; border-radius:6px; background:#fff; color:#666; font-size:12px; cursor:pointer; font-family:inherit;}
+  .btn-mini:hover{border-color:#12b886; color:#12b886;}
+  .btn-mini.danger:hover{border-color:#e5484d; color:#e5484d;}
+  .btn-mini.primary{background:#12b886; border-color:#12b886; color:#fff;}
+  .btn-mini.primary:hover{background:#0ca678; color:#fff;}
+  .employee-card .edit-form{display:flex; gap:6px; flex-wrap:wrap; flex:1; margin-right:10px;}
+  .employee-card .edit-form input{width:88px; height:30px; font-size:13px;}
 
   /* 制单管理样式 */
   .order-form{display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px;}
@@ -270,6 +278,18 @@ const API = {
       body: JSON.stringify(data)
     });
     return res.json();
+  },
+  async put(path, data) {
+    const res = await fetch('/api' + path, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  async del(path) {
+    const res = await fetch('/api' + path, { method: 'DELETE' });
+    return res.json();
   }
 };
 
@@ -407,13 +427,68 @@ async function loadEmployees() {
   }
   
   list.innerHTML = res.data.map(e => `
-    <div class="employee-card">
+    <div class="employee-card" id="emp-card-${e.id}">
       <div class="info">
         <div class="name">${e.name} (${e.id})</div>
         <div class="meta">${e.factory} · ${e.grp}</div>
       </div>
+      <div class="ops">
+        <button class="btn-mini" onclick="editEmployee('${e.id}')">编辑</button>
+        <button class="btn-mini danger" onclick="deleteEmployee('${e.id}')">删除</button>
+      </div>
     </div>
   `).join('');
+}
+
+function editEmployee(id) {
+  const card = $("#emp-card-" + id);
+  if (!card) return;
+  const name = card.querySelector('.name').textContent.replace(` (${id})`, '').trim();
+  const metaParts = card.querySelector('.meta').textContent.split('·').map(s => s.trim());
+  
+  card.innerHTML = `
+    <div class="edit-form">
+      <input class="edit-name" placeholder="姓名" value="${name}">
+      <input class="edit-factory" placeholder="工厂" value="${metaParts[0] || ''}">
+      <input class="edit-grp" placeholder="组别" value="${metaParts[1] || ''}">
+    </div>
+    <div class="ops">
+      <button class="btn-mini primary" onclick="saveEmployee('${id}')">保存</button>
+      <button class="btn-mini" onclick="loadEmployees()">取消</button>
+    </div>
+  `;
+}
+
+async function saveEmployee(id) {
+  const card = $("#emp-card-" + id);
+  if (!card) return;
+  const name = card.querySelector('.edit-name').value.trim();
+  const factory = card.querySelector('.edit-factory').value.trim();
+  const grp = card.querySelector('.edit-grp').value.trim();
+  
+  if (!name || !factory || !grp) {
+    return toast('请填写所有字段');
+  }
+  
+  const res = await API.put('/admin/employees/' + encodeURIComponent(id), { name, factory, grp });
+  if (res.ok) {
+    toast('保存成功');
+    loadEmployees();
+  } else {
+    toast(res.error || '保存失败');
+  }
+}
+
+async function deleteEmployee(id) {
+  if (!confirm(`确定删除员工 ${id} 吗？`)) return;
+  
+  const res = await API.del('/admin/employees/' + encodeURIComponent(id));
+  if (res.ok) {
+    toast('已删除');
+    loadEmployees();
+  } else {
+    toast(res.error || '删除失败');
+  }
 }
 
 async function addEmployee() {

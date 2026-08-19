@@ -174,6 +174,54 @@ router.post('/employees', async (req, res) => {
   }
 });
 
+// 更新员工（姓名/工厂/组别，工号不可改）
+router.put('/employees/:id', async (req, res) => {
+  const db = req.app.locals.db;
+  const { id } = req.params;
+  const { name, factory, grp } = req.body;
+  
+  if (!name || !factory || !grp) {
+    return res.status(400).json({ ok: false, error: '所有字段都不能为空' });
+  }
+  
+  try {
+    const rows = await db.runQuery('SELECT * FROM employees WHERE id = ?', [id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: '员工工号不存在' });
+    }
+    
+    await db.runInsert('UPDATE employees SET name = ?, factory = ?, grp = ? WHERE id = ?', [name, factory, grp, id]);
+    res.json({ ok: true, message: '员工信息已更新' });
+  } catch (err) {
+    console.error('更新员工失败:', err);
+    res.status(500).json({ ok: false, error: '服务器错误' });
+  }
+});
+
+// 删除员工（有上报记录的员工不允许删除）
+router.delete('/employees/:id', async (req, res) => {
+  const db = req.app.locals.db;
+  const { id } = req.params;
+  
+  try {
+    const rows = await db.runQuery('SELECT * FROM employees WHERE id = ?', [id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: '员工工号不存在' });
+    }
+    
+    const reportCount = await db.runQuery('SELECT COUNT(*) as c FROM reports WHERE emp_id = ?', [id]);
+    if (reportCount[0].c > 0) {
+      return res.status(400).json({ ok: false, error: `该员工已有 ${reportCount[0].c} 条上报记录，无法删除` });
+    }
+    
+    await db.runInsert('DELETE FROM employees WHERE id = ?', [id]);
+    res.json({ ok: true, message: '员工已删除' });
+  } catch (err) {
+    console.error('删除员工失败:', err);
+    res.status(500).json({ ok: false, error: '服务器错误' });
+  }
+});
+
 router.get('/orders', async (req, res) => {
   const db = req.app.locals.db;
   
