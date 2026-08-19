@@ -111,10 +111,17 @@ function initDatabase() {
              );
              INSERT OR IGNORE INTO group_targets (grp, target_per_person, std_dct) VALUES
                ('缝纫A组', 47, 0.4), ('缝纫B组', 54, 0.4),
-               ('裁剪组', 33, 0.4), ('后整组', 26, 0.4);`,
+               ('裁剪组', 33, 0.4), ('后整组', 26, 0.4);
+             CREATE TABLE IF NOT EXISTS group_headcount (
+               grp TEXT NOT NULL,
+               date TEXT NOT NULL,
+               headcount INTEGER NOT NULL,
+               created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+               PRIMARY KEY (grp, date)
+             );`,
             (err) => {
               if (err) console.error('迁移 group_targets 失败:', err.message);
-              else console.log('✓ 迁移: group_targets 表就绪（含默认目标）');
+              else console.log('✓ 迁移: group_targets / group_headcount 表就绪（含默认目标）');
               resolve(db);
             }
           );

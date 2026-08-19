@@ -67,6 +67,9 @@
     font-size:14px; z-index:100; display:none;}
   .toast.show{display:block;}
 
+  /* 组别日报：当天上班人数输入框 */
+  .hc-input{width:76px; height:30px; font-size:13px;}
+
   /* 上报详情弹窗 */
   .modal-overlay{position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:200;
     display:none; align-items:center; justify-content:center; padding:16px;}
@@ -355,7 +358,7 @@
           <thead>
             <tr>
               <th>组别</th>
-              <th>人数</th>
+              <th>当天上班人数</th>
               <th>产量</th>
               <th>效率%</th>
               <th>DCT</th>
@@ -828,14 +831,39 @@ async function loadGroupReport() {
   
   tbody.innerHTML = res.data.map(g => `
     <tr>
-      <td>${g.grp}${g.has_target ? '' : ' <span style="color:#e5484d;font-size:11px">(未设目标)</span>'}</td>
-      <td>${g.headcount}</td>
+      <td>${esc(g.grp)}${g.has_target ? '' : ' <span style="color:#e5484d;font-size:11px">(未设目标)</span>'}</td>
+      <td>
+        <input type="number" min="1" step="1" class="hc-input" data-grp="${esc(g.grp)}"
+          value="${g.manual_headcount === null ? '' : g.manual_headcount}"
+          placeholder="${g.default_headcount}"
+          title="填写当天实际上班人数；留空 = 组内在册 ${g.default_headcount} 人"
+          onchange="saveGroupHeadcount(this)">
+      </td>
       <td>${g.qty}</td>
       <td>${g.efficiency === null ? '-' : g.efficiency}</td>
       <td>${g.dct === null ? '-' : g.dct}</td>
       <td>${g.fpy === null ? '-' : g.fpy}</td>
     </tr>
   `).join('');
+}
+
+// 保存当天上班人数（留空恢复默认）；回车/失焦触发
+async function saveGroupHeadcount(input) {
+  const grp = input.dataset.grp;
+  const date = $("#groupDate").value;
+  const val = input.value.trim();
+  const res = await API.post('/admin/group-headcount', {
+    grp,
+    date,
+    headcount: val === '' ? null : Number(val)
+  });
+  if (res.ok) {
+    toast('人数已保存');
+    loadGroupReport();
+  } else {
+    toast(res.error || '保存失败');
+    loadGroupReport();
+  }
 }
 
 async function loadGroupTargets() {

@@ -61,6 +61,15 @@ CREATE TABLE IF NOT EXISTS group_targets (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 组别当天上班人数表（效率分母，按日期手动配置）
+CREATE TABLE IF NOT EXISTS group_headcount (
+  grp TEXT NOT NULL,                         -- 组别
+  date TEXT NOT NULL,                        -- 日期 (YYYY-MM-DD)
+  headcount INTEGER NOT NULL,                -- 当天上班人数
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (grp, date)
+);
+
 -- 创建索引
 CREATE INDEX IF NOT EXISTS idx_reports_emp ON reports(emp_id);
 CREATE INDEX IF NOT EXISTS idx_reports_date ON reports(report_date);

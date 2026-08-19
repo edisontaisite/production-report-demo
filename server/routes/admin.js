@@ -330,6 +330,37 @@ router.delete('/group-targets/:grp', async (req, res) => {
   }
 });
 
+// 保存组别某天的上班人数（效率分母）；留空则删除、回退组内在册人数
+router.post('/group-headcount', async (req, res) => {
+  const db = req.app.locals.db;
+  const { grp, date, headcount } = req.body;
+  
+  if (!grp) return res.status(400).json({ ok: false, error: '组别不能为空' });
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ ok: false, error: '日期格式不正确' });
+  
+  try {
+    if (headcount === null || headcount === '' || headcount === undefined) {
+      await db.runInsert('DELETE FROM group_headcount WHERE grp = ? AND date = ?', [grp, date]);
+      res.json({ ok: true, message: '已恢复默认人数（组内在册人数）' });
+      return;
+    }
+    
+    const n = Number(headcount);
+    if (!Number.isInteger(n) || n <= 0) {
+      return res.status(400).json({ ok: false, error: '人数必须是大于 0 的整数' });
+    }
+    
+    await db.runInsert(
+      'INSERT OR REPLACE INTO group_headcount (grp, date, headcount) VALUES (?, ?, ?)',
+      [grp, date, n]
+    );
+    res.json({ ok: true, message: '当天上班人数已保存' });
+  } catch (err) {
+    console.error('保存组别上班人数失败:', err);
+    res.status(500).json({ ok: false, error: '服务器错误' });
+  }
+});
+
 // 组别日报：人数 / 产量 / 效率 / DCT / FPY
 router.get('/group-report', async (req, res) => {
   const db = req.app.locals.db;
@@ -342,6 +373,11 @@ router.get('/group-report', async (req, res) => {
     const targets = await db.runQuery('SELECT * FROM group_targets');
     const tMap = {};
     for (const t of targets) tMap[t.grp] = t;
+    
+    // 当天手动配置的上班人数（效率分母，留空则用组内在册人数）
+    const headcountRows = await db.runQuery('SELECT grp, headcount FROM group_headcount WHERE date = ?', [date]);
+    const hMap = {};
+    for (const h of headcountRows) hMap[h.grp] = h.headcount;
     
     // 各组当天上报明细
     const items = await db.runQuery(`
@@ -377,7 +413,9 @@ router.get('/group-report', async (req, res) => {
     const rows = [];
     for (const grp of Object.keys(grps)) {
       const g = grpMap[grp] || { empIds: new Set(), qty: 0, rqty: 0 };
-      const headcount = g.empIds.size > 0 ? g.empIds.size : grps[grp].total;
+      const defaultHeadcount = grps[grp].total;
+      const manual = hMap[grp] != null ? Number(hMap[grp]) : 0;
+      const headcount = manual > 0 ? manual : defaultHeadcount;
       const qty = Math.round(g.qty * 100) / 100;
       const rqty = Math.round(g.rqty * 100) / 100;
       const target = tMap[grp];
@@ -396,6 +434,8 @@ router.get('/group-report', async (req, res) => {
       rows.push({
         grp,
         headcount,
+        default_headcount: defaultHeadcount,
+        manual_headcount: manual > 0 ? manual : null,
         qty,
         efficiency: eff,
         dct,
