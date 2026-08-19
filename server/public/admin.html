@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>产量上报 - 管理后台</title>
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:#f5f6fa; color:#333; font-size:14px;}
+  
+  .header{background:#fff; padding:16px 24px; border-bottom:1px solid #e8e8e8; display:flex; align-items:center; justify-content:space-between;}
+  .header h1{font-size:18px; margin:0; display:flex; align-items:center; gap:8px;}
+  .header .logo{width:32px; height:32px; background:linear-gradient(135deg,#12b886,#0ca678); border-radius:6px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:16px;}
+  .header-actions{display:flex; gap:12px;}
+
+  .nav{background:#fff; border-bottom:1px solid #e8e8e8; padding:0 24px; display:flex; gap:4px;}
+  .nav-item{padding:12px 16px; cursor:pointer; border-bottom:2px solid transparent; color:#666; transition:all .2s;}
+  .nav-item:hover{color:#12b886;}
+  .nav-item.active{border-color:#12b886; color:#12b886; font-weight:500;}
+
+  .container{max-width:1200px; margin:0 auto; padding:24px;}
+
+  .stat-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin-bottom:24px;}
+  .stat-card{background:#fff; border-radius:10px; padding:20px; box-shadow:0 1px 3px rgba(0,0,0,.08);}
+  .stat-card .label{font-size:13px; color:#888; margin-bottom:8px;}
+  .stat-card .value{font-size:28px; font-weight:600; color:#333;}
+  .stat-card .value.green{color:#12b886;}
+  .stat-card .value.blue{color:#3b82f6;}
+
+  .card{background:#fff; border-radius:10px; box-shadow:0 1px 3px rgba(0,0,0,.08); margin-bottom:24px;}
+  .card-header{padding:16px 20px; border-bottom:1px solid #eee; display:flex; align-items:center; justify-content:space-between;}
+  .card-header h2{font-size:16px; margin:0;}
+  .card-body{padding:20px;}
+
+  .filters{display:flex; gap:12px; flex-wrap:wrap; align-items:center;}
+  .filter-item{display:flex; align-items:center; gap:8px;}
+  .filter-item label{font-size:13px; color:#666;}
+  input, select{height:36px; padding:0 12px; border:1px solid #e0e0e0; border-radius:6px; font-size:14px; outline:none;}
+  input:focus, select:focus{border-color:#12b886;}
+  button{height:36px; padding:0 16px; border:none; border-radius:6px; cursor:pointer; font-size:14px; font-family:inherit;}
+  .btn-primary{background:#12b886; color:#fff;}
+  .btn-primary:hover{background:#0ca678;}
+  .btn-secondary{background:#f0f0f0; color:#666;}
+  .btn-secondary:hover{background:#e0e0e0;}
+
+  table{width:100%; border-collapse:collapse;}
+  th,td{padding:12px 16px; text-align:left; border-bottom:1px solid #eee;}
+  th{background:#fafafa; font-weight:500; color:#666; font-size:13px;}
+  tr:hover{background:#fafafa;}
+  .amount{color:#12b886; font-weight:500;}
+  .badge{display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px;}
+  .badge-green{background:#e6f7f2; color:#0ca678;}
+
+  .pagination{display:flex; align-items:center; justify-content:center; gap:8px; padding:16px;}
+  .pagination button{width:36px; height:36px; padding:0; display:flex; align-items:center; justify-content:center;}
+  .pagination button.active{background:#12b886; color:#fff;}
+
+  .empty{text-align:center; padding:40px; color:#999;}
+
+  .toast{position:fixed; left:50%; top:20%; transform:translateX(-50%);
+    background:rgba(0,0,0,.8); color:#fff; padding:12px 24px; border-radius:8px;
+    font-size:14px; z-index:100; display:none;}
+  .toast.show{display:block;}
+
+  .tab-content{display:none;}
+  .tab-content.active{display:block;}
+
+  /* 员工管理样式 */
+  .employee-form{display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px;}
+  .employee-form input{width:120px;}
+  .employee-list{display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:12px;}
+  .employee-card{background:#fafafa; border-radius:8px; padding:14px; display:flex; justify-content:space-between; align-items:center;}
+  .employee-card .info .name{font-weight:500; margin-bottom:4px;}
+  .employee-card .info .meta{font-size:12px; color:#888;}
+
+  /* 制单管理样式 */
+  .order-form{display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px;}
+  .order-form input, .order-form select{width:140px;}
+  .order-card{background:#fafafa; border-radius:8px; padding:14px; margin-bottom:12px;}
+  .order-card .header{display:flex; justify-content:space-between; margin-bottom:8px;}
+  .order-card .order-no{font-weight:500;}
+  .order-card .product{color:#666; font-size:13px;}
+  .order-card .stats{display:flex; gap:16px; font-size:12px; color:#888;}
+  .process-list{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
+  .process-tag{background:#fff; border:1px solid #e0e0e0; border-radius:4px; padding:4px 8px; font-size:12px;}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>
+    <div class="logo">📊</div>
+    产量上报管理系统
+  </h1>
+  <div class="header-actions">
+    <button class="btn-secondary" onclick="location.href='index.html'">← 员工端</button>
+  </div>
+</div>
+
+<div class="nav">
+  <div class="nav-item active" data-tab="reports">上报记录</div>
+  <div class="nav-item" data-tab="stats">统计数据</div>
+  <div class="nav-item" data-tab="employees">员工管理</div>
+  <div class="nav-item" data-tab="orders">制单管理</div>
+</div>
+
+<div class="container">
+  <!-- 上报记录 -->
+  <div class="tab-content active" id="tab-reports">
+    <div class="card">
+      <div class="card-header">
+        <h2>上报记录</h2>
+        <div class="filters">
+          <div class="filter-item">
+            <label>开始日期</label>
+            <input type="date" id="filterStart">
+          </div>
+          <div class="filter-item">
+            <label>结束日期</label>
+            <input type="date" id="filterEnd">
+          </div>
+          <div class="filter-item">
+            <label>工号</label>
+            <input type="text" id="filterEmp" placeholder="工号" style="width:80px">
+          </div>
+          <button class="btn-primary" onclick="loadReports(0)">查询</button>
+          <button class="btn-secondary" onclick="exportData()">导出CSV</button>
+        </div>
+      </div>
+      <div class="card-body" style="padding:0">
+        <table>
+          <thead>
+            <tr>
+              <th>日期</th>
+              <th>工号</th>
+              <th>姓名</th>
+              <th>工厂/组别</th>
+              <th>明细</th>
+              <th>工价小计</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="reportsBody">
+            <tr><td colspan="7" class="empty">加载中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination" id="pagination"></div>
+    </div>
+  </div>
+
+  <!-- 统计数据 -->
+  <div class="tab-content" id="tab-stats">
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="label">总工价</div>
+        <div class="value green" id="statTotal">¥0.00</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">今日上报数</div>
+        <div class="value blue" id="statTodayCount">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">今日工价</div>
+        <div class="value green" id="statTodayAmount">¥0.00</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2>各制单统计</h2>
+      </div>
+      <div class="card-body" style="padding:0">
+        <table>
+          <thead>
+            <tr>
+              <th>制单号</th>
+              <th>产品</th>
+              <th>总产量</th>
+              <th>总金额</th>
+              <th>上报次数</th>
+            </tr>
+          </thead>
+          <tbody id="orderStatsBody">
+            <tr><td colspan="5" class="empty">加载中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2>各员工统计</h2>
+      </div>
+      <div class="card-body" style="padding:0">
+        <table>
+          <thead>
+            <tr>
+              <th>工号</th>
+              <th>姓名</th>
+              <th>工厂/组别</th>
+              <th>上报次数</th>
+              <th>总金额</th>
+            </tr>
+          </thead>
+          <tbody id="empStatsBody">
+            <tr><td colspan="5" class="empty">加载中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 员工管理 -->
+  <div class="tab-content" id="tab-employees">
+    <div class="card">
+      <div class="card-header">
+        <h2>员工列表</h2>
+      </div>
+      <div class="card-body">
+        <div class="employee-form">
+          <input type="text" id="newEmpId" placeholder="工号">
+          <input type="text" id="newEmpName" placeholder="姓名">
+          <input type="text" id="newEmpFactory" placeholder="工厂">
+          <input type="text" id="newEmpGrp" placeholder="组别">
+          <button class="btn-primary" onclick="addEmployee()">添加员工</button>
+        </div>
+        <div class="employee-list" id="employeeList">
+          <div class="empty">加载中...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 制单管理 -->
+  <div class="tab-content" id="tab-orders">
+    <div class="card">
+      <div class="card-header">
+        <h2>制单列表</h2>
+      </div>
+      <div class="card-body">
+        <div id="orderList">
+          <div class="empty">加载中...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s, r=document) => r.querySelector(s);
+const money = n => (n || 0).toFixed(2);
+const toast = (msg) => {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"), 2000);
+};
+
+/* API */
+const API = {
+  async get(path) {
+    const res = await fetch('/api' + path);
+    return res.json();
+  },
+  async post(path, data) {
+    const res = await fetch('/api' + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  }
+};
+
+/* 标签页切换 */
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.onclick = () => {
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    item.classList.add('active');
+    $("#tab-" + item.dataset.tab).classList.add('active');
+    
+    // 加载对应数据
+    if (item.dataset.tab === 'reports') loadReports(0);
+    if (item.dataset.tab === 'stats') loadStats();
+    if (item.dataset.tab === 'employees') loadEmployees();
+    if (item.dataset.tab === 'orders') loadOrders();
+  };
+});
+
+/* 上报记录 */
+let currentPage = 0;
+const pageSize = 20;
+
+async function loadReports(page) {
+  currentPage = page;
+  const start = $("#filterStart").value;
+  const end = $("#filterEnd").value;
+  const emp = $("#filterEmp").value.trim();
+  
+  let url = `/admin/reports?limit=${pageSize}&offset=${page * pageSize}`;
+  if (start) url += `&start_date=${start}`;
+  if (end) url += `&end_date=${end}`;
+  if (emp) url += `&emp_id=${emp}`;
+  
+  const res = await API.get(url);
+  const tbody = $("#reportsBody");
+  
+  if (!res.ok || !res.data.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无记录</td></tr>';
+    $("#pagination").innerHTML = '';
+    return;
+  }
+  
+  tbody.innerHTML = res.data.map(r => `
+    <tr>
+      <td>${r.report_date}</td>
+      <td>${r.emp_id}</td>
+      <td>${r.emp_name || '-'}</td>
+      <td>${r.factory || ''} / ${r.grp || ''}</td>
+      <td>${r.items.map(i => `<div style="font-size:12px">${i.order_no} ${i.proc_name} × ${i.qty} <span class="amount">¥${money(i.amount)}</span></div>`).join('')}</td>
+      <td class="amount">¥${money(r.subtotal)}</td>
+      <td><button class="btn-secondary" style="height:28px;font-size:12px;padding:0 8px" onclick="viewReport(${r.id})">查看</button></td>
+    </tr>
+  `).join('');
+  
+  // 分页
+  const totalPages = Math.ceil(res.total / pageSize);
+  if (totalPages > 1) {
+    let html = '';
+    for (let i = 0; i < totalPages; i++) {
+      html += `<button class="${i === page ? 'btn-primary active' : 'btn-secondary'}" onclick="loadReports(${i})">${i + 1}</button>`;
+    }
+    $("#pagination").innerHTML = html;
+  } else {
+    $("#pagination").innerHTML = '';
+  }
+}
+
+function viewReport(id) {
+  alert('查看详情功能开发中...');
+}
+
+function exportData() {
+  const start = $("#filterStart").value;
+  const end = $("#filterEnd").value;
+  let url = '/api/admin/export';
+  const params = [];
+  if (start) params.push(`start_date=${start}`);
+  if (end) params.push(`end_date=${end}`);
+  if (params.length) url += '?' + params.join('&');
+  window.location.href = url;
+}
+
+/* 统计数据 */
+async function loadStats() {
+  const res = await API.get('/admin/stats');
+  if (!res.ok) return;
+  
+  const d = res.data;
+  $("#statTotal").textContent = '¥' + money(d.total_amount);
+  $("#statTodayCount").textContent = d.today_count;
+  $("#statTodayAmount").textContent = '¥' + money(d.today_amount);
+  
+  // 各制单统计
+  const orderStats = $("#orderStatsBody");
+  if (d.by_order && d.by_order.length) {
+    orderStats.innerHTML = d.by_order.map(o => `
+      <tr>
+        <td>${o.order_no}</td>
+        <td>${o.product || '-'}</td>
+        <td>${o.total_qty}</td>
+        <td class="amount">¥${money(o.total_amount)}</td>
+        <td>${o.report_count}</td>
+      </tr>
+    `).join('');
+  } else {
+    orderStats.innerHTML = '<tr><td colspan="5" class="empty">暂无数据</td></tr>';
+  }
+  
+  // 各员工统计
+  const empStats = $("#empStatsBody");
+  if (d.by_employee && d.by_employee.length) {
+    empStats.innerHTML = d.by_employee.map(e => `
+      <tr>
+        <td>${e.emp_id}</td>
+        <td>${e.name}</td>
+        <td>${e.factory} / ${e.grp}</td>
+        <td>${e.report_count}</td>
+        <td class="amount">¥${money(e.total_amount)}</td>
+      </tr>
+    `).join('');
+  } else {
+    empStats.innerHTML = '<tr><td colspan="5" class="empty">暂无数据</td></tr>';
+  }
+}
+
+/* 员工管理 */
+async function loadEmployees() {
+  const res = await API.get('/admin/employees');
+  const list = $("#employeeList");
+  
+  if (!res.ok || !res.data.length) {
+    list.innerHTML = '<div class="empty">暂无员工</div>';
+    return;
+  }
+  
+  list.innerHTML = res.data.map(e => `
+    <div class="employee-card">
+      <div class="info">
+        <div class="name">${e.name} (${e.id})</div>
+        <div class="meta">${e.factory} · ${e.grp}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function addEmployee() {
+  const id = $("#newEmpId").value.trim();
+  const name = $("#newEmpName").value.trim();
+  const factory = $("#newEmpFactory").value.trim();
+  const grp = $("#newEmpGrp").value.trim();
+  
+  if (!id || !name || !factory || !grp) {
+    return toast('请填写所有字段');
+  }
+  
+  const res = await API.post('/admin/employees', { id, name, factory, grp });
+  if (res.ok) {
+    toast('添加成功');
+    $("#newEmpId").value = '';
+    $("#newEmpName").value = '';
+    $("#newEmpFactory").value = '';
+    $("#newEmpGrp").value = '';
+    loadEmployees();
+  } else {
+    toast(res.error || '添加失败');
+  }
+}
+
+/* 制单管理 */
+async function loadOrders() {
+  const res = await API.get('/admin/orders');
+  const list = $("#orderList");
+  
+  if (!res.ok || !res.data.length) {
+    list.innerHTML = '<div class="empty">暂无制单</div>';
+    return;
+  }
+  
+  // 需要获取每个制单的工序
+  let html = '';
+  for (const order of res.data) {
+    const procRes = await API.get(`/orders/${order.order_no}/processes`);
+    html += `
+      <div class="order-card">
+        <div class="header">
+          <span class="order-no">${order.order_no}</span>
+          <span style="color:#888;font-size:12px">${order.style_no || ''}</span>
+        </div>
+        <div class="product">${order.product || '-'}</div>
+        <div class="stats">
+          <span>工序: ${order.proc_count}</span>
+          <span>剩余总量: ${order.total_remaining || 0}</span>
+        </div>
+        <div class="process-list">
+          ${procRes.ok ? procRes.data.map(p => `
+            <span class="process-tag">${p.proc_code} ${p.proc_name} ¥${p.unit_price} (剩${p.remaining})</span>
+          `).join('') : ''}
+        </div>
+      </div>
+    `;
+  }
+  list.innerHTML = html;
+}
+
+/* 初始化 */
+(async function init() {
+  // 设置日期范围默认值（本月）
+  const now = new Date();
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  const today = now.toISOString().slice(0, 10);
+  $("#filterStart").value = firstDay;
+  $("#filterEnd").value = today;
+  
+  loadReports(0);
+})();
+</script>
+</body>
+</html>

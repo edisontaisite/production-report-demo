@@ -1,0 +1,16 @@
+{
+  "name": "production-report-demo",
+  "version": "1.0.0",
+  "description": "员工产量上报系统",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js",
+    "init-db": "node server/db/init.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "sqlite3": "^6.0.1"
+  }
+}
