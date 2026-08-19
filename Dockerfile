@@ -1,4 +1,6 @@
-FROM node:22-bullseye
+# 使用 trixie（Debian 13，glibc 2.41）而非 bullseye（glibc 2.31）：
+# sqlite3 的二进制需要 GLIBC_2.38，bullseye 无法满足会导致部署失败。
+FROM node:22-trixie
 
 WORKDIR /app
 
