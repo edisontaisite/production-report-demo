@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>产量上报使用说明 - 员工版</title>
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:#f5f6fa; color:#333; font-size:15px; line-height:1.6;}
+  .top{background:linear-gradient(135deg,#12b886,#0ca678); color:#fff; padding:28px 20px 22px; text-align:center;}
+  .top h1{margin:0 0 6px; font-size:22px;}
+  .top p{margin:0; font-size:14px; opacity:.9;}
+  .wrap{max-width:640px; margin:0 auto; padding:20px 16px 40px;}
+
+  .card{background:#fff; border-radius:12px; box-shadow:0 1px 4px rgba(0,0,0,.08);
+    padding:20px; margin-bottom:16px;}
+  .step-num{display:inline-flex; width:26px; height:26px; border-radius:50%; background:#12b886; color:#fff;
+    align-items:center; justify-content:center; font-size:15px; font-weight:600; margin-right:8px;}
+  .step-title{font-size:17px; font-weight:600; margin:0 0 4px; display:flex; align-items:center;}
+  .step-tip{color:#888; font-size:13px; margin:0 0 12px;}
+  .card img{width:100%; border:1px solid #eee; border-radius:10px; display:block;}
+
+  .plain{font-size:14px;}
+  .plain ul{margin:8px 0 0; padding-left:20px;}
+  .plain li{margin-bottom:6px;}
+  .hl{color:#0ca678; font-weight:600;}
+  .warn{color:#e8590c; font-weight:600;}
+
+  .qa{border-left:4px solid #12b886; background:#f2fbf8; border-radius:0 10px 10px 0;
+    padding:12px 14px; margin-bottom:10px;}
+  .qa .q{font-weight:600; margin-bottom:4px;}
+
+  .entry{display:flex; gap:12px; flex-wrap:wrap;}
+  .entry-box{flex:1; min-width:200px; background:#f2fbf8; border:1px solid #d3efe6; border-radius:10px;
+    padding:14px; text-align:center;}
+  .entry-box .icon{font-size:28px;}
+  .entry-box .t{font-weight:600; margin:4px 0 2px;}
+  .entry-box .d{font-size:12px; color:#888;}
+
+  .foot{text-align:center; color:#999; font-size:12px; padding:16px 0;}
+  a{color:#0ca678;}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>📖 产量上报使用说明</h1>
+  <p>每天花 1 分钟，把自己的产量填上去就行</p>
+</div>
+
+<div class="wrap">
+
+  <div class="card">
+    <div class="step-title">👋 先学会怎么打开</div>
+    <p class="step-tip">两种方式任选一个，数据是通的</p>
+    <div class="entry">
+      <div class="entry-box">
+        <div class="icon">📱</div>
+        <div class="t">微信小程序</div>
+        <div class="d">打开微信 → 搜小程序或点体验版链接</div>
+      </div>
+      <div class="entry-box">
+        <div class="icon">🌐</div>
+        <div class="t">手机浏览器</div>
+        <div class="d">打开组长发的网址链接</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="step-title"><span class="step-num">1</span>输入你的名字</div>
+    <p class="step-tip">输完名字后，工厂和组别会自动带出来，不用自己填</p>
+    <img src="guide/step-1-name.png" alt="输入姓名">
+  </div>
+
+  <div class="card">
+    <div class="step-title"><span class="step-num">2</span>选订单、选工序，填产量</div>
+    <p class="step-tip">选好工序后，工价和"剩余产量"会自动显示，照着填产量就行</p>
+    <img src="guide/step-2-fill.png" alt="填写产量">
+  </div>
+
+  <div class="card">
+    <div class="step-title"><span class="step-num">3</span>注意！产量不能超过"剩余产量"</div>
+    <p class="step-tip">填超了会马上出现<span class="warn">红字提醒</span>，按提示改小一点再提交</p>
+    <img src="guide/step-3-over.png" alt="超量提醒">
+  </div>
+
+  <div class="card">
+    <div class="step-title"><span class="step-num">4</span>点"提交"，看到这个就是报好了</div>
+    <p class="step-tip">出现"提交成功"和你的<span class="hl">工价小计</span>，就说明数据已经交上去了</p>
+    <img src="guide/step-4-done.png" alt="提交成功">
+  </div>
+
+  <div class="card plain">
+    <div class="step-title">💡 几个要知道的小事</div>
+    <ul>
+      <li><span class="hl">一个工序可以分几行填</span>：比如上午做了 30、下午做了 20，就加一行分开填，系统会自动加起来算，不用你自己算。</li>
+      <li><span class="hl">返工数可填可不填</span>：这批货里有几件返工的才填，没有就空着。</li>
+      <li><span class="hl">日期一般不用改</span>：默认就是今天。补报昨天的才需要改日期。</li>
+      <li><span class="hl">填完提交后不能自己改</span>：如果交错了，跟组长说一声处理。</li>
+    </ul>
+  </div>
+
+  <div class="card plain">
+    <div class="step-title">❓ 常见问题</div>
+    <div class="qa">
+      <div class="q">1. 输名字显示"未找到该员工"？</div>
+      <div>说明你还没录入系统，找组长在后台把你加进去就行。</div>
+    </div>
+    <div class="qa">
+      <div class="q">2. 订单列表里找不到我的订单？</div>
+      <div>订单还没录进去，让组长在后台"订单管理"里添加。</div>
+    </div>
+    <div class="qa">
+      <div class="q">3. 显示"合计 X 超过剩余产量 Y"？</div>
+      <div>这个订单这道工序剩下 Y 件可做，你填的数加起来超了，改小或找组长确认剩余量。</div>
+    </div>
+    <div class="qa">
+      <div class="q">4. 手机没信号/提交没反应？</div>
+      <div>别重复猛点提交，先等一下；还不行就刷新页面重新填一次。</div>
+    </div>
+  </div>
+
+  <div class="foot">
+    数据都保存在服务器上，换了手机、换台设备也能查到<br>
+    有问题找组长或管理员
+  </div>
+</div>
+</body>
+</html>
