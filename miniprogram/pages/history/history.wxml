@@ -17,6 +17,7 @@
     </view>
   </view>
 
-  <view class="empty" wx:if="{{!loading && !list.length}}">暂无上报记录</view>
+  <view class="empty" wx:if="{{!loading && !list.length && !empId}}">请输入工号查询上报记录</view>
+  <view class="empty" wx:if="{{!loading && !list.length && empId}}">该工号暂无上报记录</view>
   <view class="empty" wx:if="{{loading}}">加载中...</view>
 </view>
