@@ -1,0 +1,22 @@
+<view class="page">
+  <view class="card">
+    <view class="search-row">
+      <input class="input" type="number" value="{{empId}}" bindinput="onEmpInput"
+        bindconfirm="load" placeholder="请输入工号查看上报记录" placeholder-class="ph" />
+      <button class="btn-query" bindtap="load">查询</button>
+    </view>
+  </view>
+
+  <view class="list" wx:if="{{list.length}}">
+    <view class="card" wx:for="{{list}}" wx:key="id">
+      <view class="head">
+        <text class="date">{{item.report_date}}</text>
+        <text class="amount">¥{{item.subtotalText}}</text>
+      </view>
+      <view class="items">{{item.itemsText}}</view>
+    </view>
+  </view>
+
+  <view class="empty" wx:if="{{!loading && !list.length}}">暂无上报记录</view>
+  <view class="empty" wx:if="{{loading}}">加载中...</view>
+</view>

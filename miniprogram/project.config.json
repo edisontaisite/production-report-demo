@@ -1,0 +1,16 @@
+{
+  "description": "员工产量上报小程序",
+  "compileType": "miniprogram",
+  "appid": "touristappid",
+  "projectname": "production-report",
+  "libVersion": "3.0.0",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "ignoreUploadUnusedFiles": true
+  },
+  "condition": {}
+}

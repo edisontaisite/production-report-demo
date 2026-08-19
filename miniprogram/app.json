@@ -1,0 +1,31 @@
+{
+  "pages": [
+    "pages/report/report",
+    "pages/history/history"
+  ],
+  "window": {
+    "navigationBarTitleText": "员工产量上报",
+    "navigationBarBackgroundColor": "#12b886",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#eef1f5",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#8a94a6",
+    "selectedColor": "#12b886",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/report/report",
+        "text": "产量上报"
+      },
+      {
+        "pagePath": "pages/history/history",
+        "text": "我的上报"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

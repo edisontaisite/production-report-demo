@@ -1,0 +1,63 @@
+.page {
+  padding-bottom: 60rpx;
+}
+
+.ph {
+  color: #c2c8d2;
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.search-row .input {
+  flex: 1;
+}
+
+.btn-query {
+  background: #12b886;
+  color: #fff;
+  font-size: 14px;
+  height: 88rpx;
+  line-height: 88rpx;
+  padding: 0 40rpx;
+  border-radius: 12rpx;
+  margin: 0;
+}
+
+.btn-query::after {
+  border: none;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12rpx;
+}
+
+.date {
+  font-size: 14px;
+  color: #8a94a6;
+}
+
+.amount {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0ca678;
+}
+
+.items {
+  font-size: 13px;
+  color: #556;
+  line-height: 1.7;
+}
+
+.empty {
+  text-align: center;
+  color: #8a94a6;
+  font-size: 14px;
+  padding: 120rpx 0;
+}

@@ -1,0 +1,65 @@
+<view class="page">
+  <!-- 员工信息卡片 -->
+  <view class="card">
+    <view class="label required">员工工号</view>
+    <input class="input" type="number" value="{{empId}}" bindinput="onEmpInput"
+      bindblur="onEmpBlur" placeholder="请填写工号（试 1001~1004）" placeholder-class="ph" />
+    <view class="err" wx:if="{{empError}}">{{empError}}</view>
+    <view class="info" wx:if="{{empInfo}}">{{empInfo.name}} · {{empInfo.factory}} · {{empInfo.grp}}</view>
+
+    <view class="label required" style="margin-top:28rpx">提交日期</view>
+    <picker mode="date" value="{{date}}" bindchange="onDateChange">
+      <view class="input">{{date}}</view>
+    </picker>
+  </view>
+
+  <!-- 产量明细 -->
+  <view class="section-title">产量明细</view>
+
+  <view class="card" wx:for="{{rows}}" wx:key="id" wx:for-item="row">
+    <view class="row-head">
+      <view class="badge">{{index + 1}}</view>
+      <view class="btn-del" bindtap="removeRow" data-id="{{row.id}}">删除</view>
+    </view>
+
+    <view class="label required">订单号</view>
+    <picker range="{{orders}}" range-key="label"
+      value="{{row.orderIdx < 0 ? 0 : row.orderIdx}}" bindchange="onOrderChange" data-id="{{row.id}}">
+      <view class="input {{row.orderNo ? '' : 'placeholder'}}">{{row.orderNo ? row.orderLabel : '请选择订单'}}</view>
+    </picker>
+
+    <view class="label required">工序代码</view>
+    <picker range="{{row.processes}}" range-key="label"
+      value="{{row.procIdx < 0 ? 0 : row.procIdx}}" bindchange="onProcChange" data-id="{{row.id}}">
+      <view class="input {{row.procName ? '' : 'placeholder'}}">{{row.procName ? row.procLabel : '请选择工序'}}</view>
+    </picker>
+
+    <view class="label">工序单价 / 剩余产量</view>
+    <view class="input ro {{row.procName ? '' : 'placeholder'}}">{{row.procName ? '¥' + row.unitPrice + '（剩余 ' + row.remaining + '）' : '暂无内容'}}</view>
+
+    <view class="label required">产量</view>
+    <input class="input" type="digit" value="{{row.qty}}" bindinput="onQtyInput"
+      data-id="{{row.id}}" placeholder="请填写产量" placeholder-class="ph" />
+    <view class="err" wx:if="{{row.qtyErr}}">{{row.qtyErr}}</view>
+  </view>
+
+  <button class="btn-add" bindtap="addRow">＋ 添加记录</button>
+
+  <!-- 小计 -->
+  <view class="card subtotal-card">
+    <text class="subtotal-label">工序工价小计</text>
+    <text class="subtotal-value">¥{{subtotalText}}</text>
+  </view>
+
+  <!-- 提交区 -->
+  <view class="save-row">
+    <checkbox-group bindchange="onSaveToggle">
+      <label class="save-label">
+        <checkbox value="1" checked="{{saveAutofill}}" color="#12b886" />
+        <text>保存本次提交内容，下次自动填充</text>
+      </label>
+    </checkbox-group>
+  </view>
+  <button class="btn-submit" bindtap="submit" disabled="{{submitting}}">{{submitting ? '提交中...' : '提交'}}</button>
+  <view class="tip">演示版：数据保存在服务器，与管理端共享。</view>
+</view>
