@@ -3,44 +3,54 @@ const util = require('../../utils/util');
 
 Page({
   data: {
-    empId: '',
+    empName: '',
     list: [],
     loading: false
   },
 
   onLoad() {
-    this.setData({ empId: wx.getStorageSync('emp_id') || '' });
+    this.setData({ empName: wx.getStorageSync('emp_name') || '' });
   },
 
   onShow() {
-    if (this.data.empId.trim()) this.load();
+    if (this.data.empName.trim()) this.load();
   },
 
   onEmpInput(e) {
-    this.setData({ empId: e.detail.value });
+    this.setData({ empName: e.detail.value });
   },
 
-  load() {
-    const empId = this.data.empId.trim();
-    if (!empId) return wx.showToast({ title: '请输入工号', icon: 'none' });
+  async load() {
+    const name = this.data.empName.trim();
+    if (!name) return wx.showToast({ title: '请输入姓名', icon: 'none' });
     if (this.data.loading) return;
 
-    wx.setStorageSync('emp_id', empId);
+    wx.setStorageSync('emp_name', name);
     this.setData({ loading: true });
 
-    api.get('/reports/history/' + encodeURIComponent(empId) + '?limit=20')
-      .then((res) => {
-        const list = res.data.map((r) => ({
-          ...r,
-          subtotalText: util.money(r.subtotal),
-          itemsText: r.items.map((i) => i.order_no + ' ' + i.proc_name + ' ×' + i.qty).join('；')
-        }));
-        this.setData({ list });
-      })
-      .catch((err) => {
-        wx.showToast({ title: err.message, icon: 'none' });
-        this.setData({ list: [] });
-      })
-      .then(() => this.setData({ loading: false }));
+    try {
+      // 先按姓名查员工
+      const empRes = await api.get('/employees/by-name/' + encodeURIComponent(name));
+      const emps = empRes.data;
+      if (emps.length === 0) {
+        this.setData({ list: [], loading: false });
+        return wx.showToast({ title: '未找到该员工', icon: 'none' });
+      }
+      if (emps.length > 1) {
+        this.setData({ list: [], loading: false });
+        return wx.showToast({ title: '有 ' + emps.length + ' 位同名员工，请联系管理员', icon: 'none' });
+      }
+
+      const res = await api.get('/reports/history/' + encodeURIComponent(emps[0].id) + '?limit=20');
+      const list = res.data.map((r) => ({
+        ...r,
+        subtotalText: util.money(r.subtotal),
+        itemsText: r.items.map((i) => i.order_no + ' ' + i.proc_name + ' ×' + i.qty).join('；')
+      }));
+      this.setData({ list, loading: false });
+    } catch (err) {
+      wx.showToast({ title: err.message, icon: 'none' });
+      this.setData({ list: [], loading: false });
+    }
   }
 });

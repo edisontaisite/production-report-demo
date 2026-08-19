@@ -117,14 +117,9 @@
     <div class="form-title">员工产量上报</div>
 
     <div class="field">
-      <div class="label req">员工工号</div>
-      <input id="empId" class="ctrl" placeholder="请填写内容（试 1001~1004）" inputmode="numeric" autocomplete="off">
-      <div class="err" id="empErr">未找到该工号</div>
-    </div>
-
-    <div class="field">
       <div class="label req">员工姓名</div>
-      <div class="ctrl ro empty" id="empName">暂无内容</div>
+      <input id="empNameInput" class="ctrl" placeholder="请输入姓名（试 张伟）" autocomplete="off">
+      <div class="err" id="empErr">未找到该员工</div>
     </div>
     <div class="field">
       <div class="label req">员工工厂</div>
@@ -242,14 +237,30 @@ async function getLast(emp_id) {
 /* ---------- 界面逻辑 ---------- */
 let seq = 0;
 const rows = new Map();
+let currentEmployee = null; // 当前确认的员工（含 id）
 
 async function loadEmployee() {
-  const id = $("#empId").value.trim();
+  const name = $("#empNameInput").value.trim();
   const setRO = (sel, val) => { const el=$(sel); el.textContent=val||"暂无内容"; el.classList.toggle("empty", !val); };
-  if (!id) { setRO("#empName",""); setRO("#empFactory",""); setRO("#empGrp",""); $("#empErr").classList.remove("show"); return; }
-  const e = await getEmployee(id);
-  if (e) { setRO("#empName",e.name); setRO("#empFactory",e.factory); setRO("#empGrp",e.grp); $("#empErr").classList.remove("show"); }
-  else { setRO("#empName",""); setRO("#empFactory",""); setRO("#empGrp",""); $("#empErr").classList.add("show"); }
+  const clearAll = () => { setRO("#empFactory",""); setRO("#empGrp",""); };
+  if (!name) { currentEmployee = null; clearAll(); $("#empErr").classList.remove("show"); return; }
+  
+  const list = await api.get('/employees/by-name/' + encodeURIComponent(name));
+  if (list.length === 1) {
+    const e = list[0];
+    currentEmployee = e;
+    setRO("#empFactory", e.factory); setRO("#empGrp", e.grp);
+    $("#empErr").classList.remove("show");
+    try { localStorage.setItem('emp_name', name); } catch (err) {}
+  } else if (list.length === 0) {
+    currentEmployee = null; clearAll();
+    $("#empErr").textContent = '未找到该员工';
+    $("#empErr").classList.add("show");
+  } else {
+    currentEmployee = null; clearAll();
+    $("#empErr").textContent = '有 ' + list.length + ' 位同名员工，请联系管理员确认';
+    $("#empErr").classList.add("show");
+  }
 }
 
 function orderOptions(selected) {
@@ -298,6 +309,10 @@ function addRow(preset) {
         <div class="label req">产量</div>
         <input class="ctrl js-qty" inputmode="decimal" placeholder="请填写数值" autocomplete="off">
         <div class="err js-qty-err"></div>
+      </div>
+      <div class="field">
+        <div class="label">返工数（可选，用于计算 FPY）</div>
+        <input class="ctrl js-rqty" inputmode="decimal" placeholder="请填写数值" autocomplete="off">
       </div>
       <div class="field" style="margin-bottom:0">
         <div class="label req">工序剩余产量</div>
@@ -402,24 +417,25 @@ $("#toggleAll").onclick = () => {
 };
 $("#addRecord").onclick = () => addRow();
 $("#addTop").onclick = () => addRow();
-$("#empId").addEventListener("change", loadEmployee);
-$("#empId").addEventListener("blur", loadEmployee);
+$("#empNameInput").addEventListener("change", loadEmployee);
+$("#empNameInput").addEventListener("blur", loadEmployee);
 
 $("#submitBtn").onclick = async () => {
-  const empId = $("#empId").value.trim();
-  if (!empId) return toast("请填写员工工号");
-  if ($("#empName").classList.contains("empty")) return toast("员工工号无效");
+  if (!currentEmployee) return toast("请先输入姓名并确认员工信息");
   const items = [];
   for (const el of $("#details").children) {
     const orderNo = $(".js-order", el).value, procCode = $(".js-proc", el).value;
     const qty = parseFloat($(".js-qty", el).value);
+    const rqty = parseFloat($(".js-rqty", el).value);
     const n = $(".badge", el).textContent;
     if (!orderNo || !procCode) return toast(`第${n}行：请选择订单号和工序`);
     if (!validateRow(el) || isNaN(qty)) return toast(`第${n}行：产量不合法`);
-    items.push({order_no:orderNo, proc_code:procCode, qty});
+    if (!isNaN(rqty) && rqty > qty) return toast(`第${n}行：返工数不能超过产量`);
+    items.push({order_no:orderNo, proc_code:procCode, qty, rqty: isNaN(rqty) ? 0 : rqty});
   }
   if (!items.length) return toast("请至少添加一条产量明细");
 
+  const empId = currentEmployee.id;
   const btn = $("#submitBtn"); btn.disabled = true;
   try {
     const res = await submitReport({emp_id:empId, report_date:$("#reportDate").value, items});
@@ -455,6 +471,11 @@ $("#moreBtn").onclick = () => $("#resetBtn").click();
   const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
   $("#reportDate").value = d.toISOString().slice(0,10);
   try { await initData(); } catch (e) { toast("加载订单数据失败：" + e.message, 3000); }
+  // 记住上次填写的姓名
+  try {
+    const lastName = localStorage.getItem('emp_name');
+    if (lastName) { $("#empNameInput").value = lastName; loadEmployee(); }
+  } catch (e) {}
   addRow();
 })();
 </script>

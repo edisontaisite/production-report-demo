@@ -91,7 +91,33 @@ function initDatabase() {
           });
         } else {
           console.log('数据库已存在');
-          resolve(db);
+          // 幂等迁移：老库升级（新列 / 新表），失败不阻塞启动
+          db.all('PRAGMA table_info(report_items)', (err, cols) => {
+            if (err || !cols) return;
+            const hasRqty = cols.some(c => c.name === 'rqty');
+            if (!hasRqty) {
+              db.run('ALTER TABLE report_items ADD COLUMN rqty REAL NOT NULL DEFAULT 0', (e) => {
+                if (e) console.error('迁移 report_items 失败:', e.message);
+                else console.log('✓ 迁移: report_items 增加 rqty 列');
+              });
+            }
+          });
+          db.exec(
+            `CREATE TABLE IF NOT EXISTS group_targets (
+               grp TEXT PRIMARY KEY,
+               target_per_person REAL NOT NULL DEFAULT 0,
+               std_dct REAL NOT NULL DEFAULT 0.4,
+               created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+             );
+             INSERT OR IGNORE INTO group_targets (grp, target_per_person, std_dct) VALUES
+               ('缝纫A组', 47, 0.4), ('缝纫B组', 54, 0.4),
+               ('裁剪组', 33, 0.4), ('后整组', 26, 0.4);`,
+            (err) => {
+              if (err) console.error('迁移 group_targets 失败:', err.message);
+              else console.log('✓ 迁移: group_targets 表就绪（含默认目标）');
+              resolve(db);
+            }
+          );
         }
       });
     });

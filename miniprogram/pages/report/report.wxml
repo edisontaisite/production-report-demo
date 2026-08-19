@@ -1,12 +1,12 @@
 <view class="page">
   <!-- 员工信息卡片 -->
   <view class="card">
-    <view class="label required">员工工号</view>
-    <input class="input" type="number" value="{{empId}}" bindinput="onEmpInput"
-      bindblur="onEmpBlur" bindconfirm="onEmpConfirm" placeholder="请填写工号（试 1001~1004）" placeholder-class="ph" />
+    <view class="label required">员工姓名</view>
+    <input class="input" value="{{empName}}" bindinput="onEmpInput"
+      bindblur="onEmpBlur" bindconfirm="onEmpConfirm" placeholder="请输入姓名（试 张伟）" placeholder-class="ph" />
     <view class="meta" wx:if="{{empLoading}}">查询中...</view>
     <view class="err" wx:if="{{empError}}">{{empError}}</view>
-    <view class="info" wx:if="{{empInfo}}">{{empInfo.name}} · {{empInfo.factory}} · {{empInfo.grp}}</view>
+    <view class="info" wx:if="{{empInfo}}">{{empInfo.factory}} · {{empInfo.grp}}</view>
 
     <view class="label required" style="margin-top:28rpx">提交日期</view>
     <picker mode="date" value="{{date}}" bindchange="onDateChange">
@@ -48,6 +48,10 @@
     <input class="input" type="digit" value="{{row.qty}}" bindinput="onQtyInput"
       data-id="{{row.id}}" placeholder="请填写产量" placeholder-class="ph" />
     <view class="err" wx:if="{{row.qtyErr}}">{{row.qtyErr}}</view>
+
+    <view class="label">返工数（可选，用于计算 FPY）</view>
+    <input class="input" type="digit" value="{{row.rqty}}" bindinput="onRqtyInput"
+      data-id="{{row.id}}" placeholder="请填写数值" placeholder-class="ph" />
   </view>
 
   <button class="btn-add" bindtap="addRow">＋ 添加记录</button>

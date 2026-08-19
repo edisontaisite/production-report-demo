@@ -3,8 +3,8 @@ const util = require('../../utils/util');
 
 Page({
   data: {
-    empId: '',
-    empInfo: null,
+    empName: '',
+    empInfo: null,       // 当前确认的员工对象 {id,name,factory,grp}
     empError: '',
     empLoading: false,
     date: '',
@@ -18,10 +18,10 @@ Page({
   },
 
   onLoad() {
-    const empId = wx.getStorageSync('emp_id') || '';
-    this.setData({ date: util.today(), empId });
+    const empName = wx.getStorageSync('emp_name') || '';
+    this.setData({ date: util.today(), empName });
     this.loadOrders();
-    if (empId) this.loadEmployee(empId);
+    if (empName) this.loadEmployee(empName);
   },
 
   onShow() {
@@ -49,12 +49,19 @@ Page({
     });
   },
 
-  loadEmployee(id) {
+  loadEmployee(name) {
     if (this.data.empLoading) return;
     this.setData({ empLoading: true, empError: '' });
-    api.get('/employees/' + encodeURIComponent(id)).then((res) => {
-      wx.setStorageSync('emp_id', id);
-      this.setData({ empInfo: res.data, empError: '', empLoading: false });
+    api.get('/employees/by-name/' + encodeURIComponent(name)).then((res) => {
+      const list = res.data;
+      if (list.length === 1) {
+        wx.setStorageSync('emp_name', name);
+        this.setData({ empInfo: list[0], empError: '', empLoading: false });
+      } else if (list.length === 0) {
+        this.setData({ empInfo: null, empError: '未找到该员工', empLoading: false });
+      } else {
+        this.setData({ empInfo: null, empError: '有 ' + list.length + ' 位同名员工，请联系管理员', empLoading: false });
+      }
     }).catch((err) => {
       this.setData({ empInfo: null, empError: err.message, empLoading: false });
     });
@@ -62,16 +69,16 @@ Page({
 
   /* ---------- 交互 ---------- */
   onEmpInput(e) {
-    this.setData({ empId: e.detail.value });
+    this.setData({ empName: e.detail.value });
   },
 
   onEmpBlur() {
-    const id = this.data.empId.trim();
-    if (!id) {
+    const name = this.data.empName.trim();
+    if (!name) {
       this.setData({ empInfo: null, empError: '' });
       return;
     }
-    this.loadEmployee(id);
+    this.loadEmployee(name);
   },
 
   onEmpConfirm() {
@@ -95,6 +102,7 @@ Page({
       unitPrice: 0,
       remaining: 0,
       qty: '',
+      rqty: '',
       qtyErr: ''
     };
     this.setData({ rows: this.data.rows.concat([row]) });
@@ -165,6 +173,11 @@ Page({
     });
   },
 
+  onRqtyInput(e) {
+    const id = e.currentTarget.dataset.id;
+    this.setData({ rows: this.updateRow(id, { rqty: e.detail.value }) });
+  },
+
   onSaveToggle(e) {
     this.setData({ saveAutofill: e.detail.value.indexOf('1') >= 0 });
   },
@@ -200,10 +213,10 @@ Page({
 
   /* ---------- 提交 ---------- */
   async submit() {
-    const { empId, empInfo, date, rows, saveAutofill, submitting } = this.data;
+    const { empName, empInfo, date, rows, saveAutofill, submitting } = this.data;
     if (submitting) return;
-    if (!empId.trim()) return wx.showToast({ title: '请填写员工工号', icon: 'none' });
-    if (!empInfo) return wx.showToast({ title: '员工工号无效', icon: 'none' });
+    if (!empName.trim()) return wx.showToast({ title: '请输入员工姓名', icon: 'none' });
+    if (!empInfo) return wx.showToast({ title: '请先确认员工信息', icon: 'none' });
 
     const items = [];
     for (let i = 0; i < rows.length; i++) {
@@ -219,21 +232,27 @@ Page({
       if (qty > r.remaining) {
         return wx.showToast({ title: '第' + n + '行：超过剩余产量 ' + r.remaining, icon: 'none' });
       }
+      const rqty = parseFloat(r.rqty);
+      if (!isNaN(rqty) && rqty > qty) {
+        return wx.showToast({ title: '第' + n + '行：返工数不能超过产量', icon: 'none' });
+      }
       items.push({
         order_no: r.orderNo,
         proc_code: r.processes[r.procIdx].proc_code,
-        qty: qty
+        qty: qty,
+        rqty: isNaN(rqty) ? 0 : rqty
       });
     }
     if (!items.length) return wx.showToast({ title: '请至少添加一条产量明细', icon: 'none' });
 
+    const empId = empInfo.id;
     this.setData({ submitting: true });
     try {
-      const res = await api.post('/reports', { emp_id: empId.trim(), report_date: date, items });
+      const res = await api.post('/reports', { emp_id: empId, report_date: date, items });
       wx.showToast({ title: '提交成功，工价 ¥' + util.money(res.subtotal), icon: 'success', duration: 2000 });
       this.setData({ rows: [] }, () => {
         this.recalc();
-        if (saveAutofill) this.applyLast(empId.trim());
+        if (saveAutofill) this.applyLast(empId);
         else this.addRow();
       });
     } catch (err) {
@@ -282,6 +301,7 @@ Page({
         unitPrice: procIdx >= 0 ? processes[procIdx].unit_price : 0,
         remaining: procIdx >= 0 ? processes[procIdx].remaining : 0,
         qty: String(it.qty),
+        rqty: it.rqty ? String(it.rqty) : '',
         qtyErr: ''
       });
     }

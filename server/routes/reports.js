@@ -28,6 +28,12 @@ router.post('/', async (req, res) => {
       if (!item.proc_code) throw new Error(`第${n}行：工序代码不能为空`);
       if (!item.qty || item.qty <= 0) throw new Error(`第${n}行：产量必须大于0`);
       
+      // 返工数（可选，用于 FPY 计算）
+      const rqty = item.rqty !== undefined && item.rqty !== null && item.rqty !== ''
+        ? Number(item.rqty) : 0;
+      if (isNaN(rqty) || rqty < 0) throw new Error(`第${n}行：返工数不合法`);
+      if (rqty > item.qty) throw new Error(`第${n}行：返工数不能超过产量`);
+      
       const processes = await db.runQuery(
         'SELECT * FROM processes WHERE order_no = ? AND proc_code = ?',
         [item.order_no, item.proc_code]
@@ -50,6 +56,7 @@ router.post('/', async (req, res) => {
         proc_code: item.proc_code,
         proc_name: process.proc_name,
         qty: item.qty,
+        rqty: rqty,
         unit_price: process.unit_price,
         amount: amount,
         new_remaining: process.remaining - item.qty
@@ -66,8 +73,8 @@ router.post('/', async (req, res) => {
     
     for (const item of resolvedItems) {
       await db.runInsert(
-        'INSERT INTO report_items (report_id, order_no, proc_code, proc_name, qty, unit_price, amount) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [reportId, item.order_no, item.proc_code, item.proc_name, item.qty, item.unit_price, item.amount]
+        'INSERT INTO report_items (report_id, order_no, proc_code, proc_name, qty, rqty, unit_price, amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [reportId, item.order_no, item.proc_code, item.proc_name, item.qty, item.rqty, item.unit_price, item.amount]
       );
     }
     

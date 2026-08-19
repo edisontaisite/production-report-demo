@@ -1,6 +1,20 @@
 const express = require('express');
 const router = express.Router();
 
+// 按姓名查询员工（可能同名，返回数组）
+router.get('/by-name/:name', async (req, res) => {
+  const db = req.app.locals.db;
+  const { name } = req.params;
+  
+  try {
+    const rows = await db.runQuery('SELECT * FROM employees WHERE name = ?', [name]);
+    res.json({ ok: true, data: rows });
+  } catch (err) {
+    console.error('按姓名查询员工失败:', err);
+    res.status(500).json({ ok: false, error: '服务器错误' });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   const db = req.app.locals.db;
   const { id } = req.params;

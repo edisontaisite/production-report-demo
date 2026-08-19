@@ -138,6 +138,7 @@
   <div class="nav-item" data-tab="stats">统计数据</div>
   <div class="nav-item" data-tab="employees">员工管理</div>
   <div class="nav-item" data-tab="orders">订单管理</div>
+  <div class="nav-item" data-tab="group">组别日报</div>
 </div>
 
 <div class="container">
@@ -255,7 +256,6 @@
       </div>
       <div class="card-body">
         <div class="employee-form">
-          <input type="text" id="newEmpId" placeholder="工号">
           <input type="text" id="newEmpName" placeholder="姓名">
           <input type="text" id="newEmpFactory" placeholder="工厂">
           <input type="text" id="newEmpGrp" placeholder="组别">
@@ -307,6 +307,56 @@
       </div>
       <div class="card-body">
         <div id="orderList">
+          <div class="empty">加载中...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 组别日报 -->
+  <div class="tab-content" id="tab-group">
+    <div class="card">
+      <div class="card-header">
+        <h2>组别日报（效率 / DCT / FPY）</h2>
+        <div class="filters">
+          <div class="filter-item">
+            <label>日期</label>
+            <input type="date" id="groupDate">
+          </div>
+          <button class="btn-primary" onclick="loadGroupReport()">查询</button>
+        </div>
+      </div>
+      <div class="card-body table-wrap" style="padding:0">
+        <table>
+          <thead>
+            <tr>
+              <th>组别</th>
+              <th>人数</th>
+              <th>产量</th>
+              <th>效率%</th>
+              <th>DCT</th>
+              <th>FPY%</th>
+            </tr>
+          </thead>
+          <tbody id="groupReportBody">
+            <tr><td colspan="6" class="empty">加载中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2>组别目标设置（效率 / DCT 计算基准）</h2>
+      </div>
+      <div class="card-body">
+        <div class="employee-form">
+          <input type="text" id="newTargetGrp" placeholder="组别">
+          <input type="number" id="newTargetPer" placeholder="目标人均产量(件/人/天)">
+          <input type="number" id="newTargetDct" placeholder="标准DCT(小时/件)" step="0.01" value="0.4">
+          <button class="btn-primary" onclick="addGroupTarget()">保存目标</button>
+        </div>
+        <div id="targetList" class="employee-list">
           <div class="empty">加载中...</div>
         </div>
       </div>
@@ -365,6 +415,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     if (item.dataset.tab === 'stats') loadStats();
     if (item.dataset.tab === 'employees') loadEmployees();
     if (item.dataset.tab === 'orders') loadOrders();
+    if (item.dataset.tab === 'group') { loadGroupTargets(); loadGroupReport(); }
   };
 });
 
@@ -488,7 +539,7 @@ async function loadEmployees() {
   list.innerHTML = res.data.map(e => `
     <div class="employee-card" id="emp-card-${e.id}">
       <div class="info">
-        <div class="name">${e.name} (${e.id})</div>
+        <div class="name">${e.name}</div>
         <div class="meta">${e.factory} · ${e.grp}</div>
       </div>
       <div class="ops">
@@ -502,7 +553,7 @@ async function loadEmployees() {
 function editEmployee(id) {
   const card = $("#emp-card-" + id);
   if (!card) return;
-  const name = card.querySelector('.name').textContent.replace(` (${id})`, '').trim();
+  const name = card.querySelector('.name').textContent.trim();
   const metaParts = card.querySelector('.meta').textContent.split('·').map(s => s.trim());
   
   card.innerHTML = `
@@ -551,19 +602,17 @@ async function deleteEmployee(id) {
 }
 
 async function addEmployee() {
-  const id = $("#newEmpId").value.trim();
   const name = $("#newEmpName").value.trim();
   const factory = $("#newEmpFactory").value.trim();
   const grp = $("#newEmpGrp").value.trim();
   
-  if (!id || !name || !factory || !grp) {
-    return toast('请填写所有字段');
+  if (!name || !factory || !grp) {
+    return toast('请填写姓名、工厂和组别');
   }
   
-  const res = await API.post('/admin/employees', { id, name, factory, grp });
+  const res = await API.post('/admin/employees', { name, factory, grp });
   if (res.ok) {
-    toast('添加成功');
-    $("#newEmpId").value = '';
+    toast('添加成功（内部编号 ' + (res.id || '') + '）');
     $("#newEmpName").value = '';
     $("#newEmpFactory").value = '';
     $("#newEmpGrp").value = '';
@@ -666,6 +715,87 @@ async function loadOrders() {
   list.innerHTML = html;
 }
 
+/* 组别日报 */
+async function loadGroupReport() {
+  const date = $("#groupDate").value;
+  if (!date) return toast('请选择日期');
+  
+  const res = await API.get('/admin/group-report?date=' + date);
+  const tbody = $("#groupReportBody");
+  
+  if (!res.ok || !res.data.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无数据（请先配置组别目标并让员工上报）</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = res.data.map(g => `
+    <tr>
+      <td>${g.grp}${g.has_target ? '' : ' <span style="color:#e5484d;font-size:11px">(未设目标)</span>'}</td>
+      <td>${g.headcount}</td>
+      <td>${g.qty}</td>
+      <td>${g.efficiency === null ? '-' : g.efficiency}</td>
+      <td>${g.dct === null ? '-' : g.dct}</td>
+      <td>${g.fpy === null ? '-' : g.fpy}</td>
+    </tr>
+  `).join('');
+}
+
+async function loadGroupTargets() {
+  const res = await API.get('/admin/group-targets');
+  const list = $("#targetList");
+  
+  if (!res.ok || !res.data.length) {
+    list.innerHTML = '<div class="empty">暂无目标设置，请先添加组别目标</div>';
+    return;
+  }
+  
+  list.innerHTML = res.data.map(t => `
+    <div class="employee-card">
+      <div class="info">
+        <div class="name">${t.grp}</div>
+        <div class="meta">目标人均产量 ${t.target_per_person} 件/人/天 · 标准DCT ${t.std_dct}</div>
+      </div>
+      <div class="ops">
+        <button class="btn-mini danger" onclick="deleteGroupTarget('${t.grp}')">删除</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function addGroupTarget() {
+  const grp = $("#newTargetGrp").value.trim();
+  const target_per_person = parseFloat($("#newTargetPer").value);
+  const std_dct = parseFloat($("#newTargetDct").value);
+  
+  if (!grp) return toast('请填写组别');
+  if (isNaN(target_per_person) || target_per_person < 0) return toast('目标人均产量不合法');
+  if (isNaN(std_dct) || std_dct <= 0) return toast('标准 DCT 不合法');
+  
+  const res = await API.post('/admin/group-targets', { grp, target_per_person, std_dct });
+  if (res.ok) {
+    toast('目标已保存');
+    $("#newTargetGrp").value = '';
+    $("#newTargetPer").value = '';
+    $("#newTargetDct").value = '0.4';
+    loadGroupTargets();
+    loadGroupReport();
+  } else {
+    toast(res.error || '保存失败');
+  }
+}
+
+async function deleteGroupTarget(grp) {
+  if (!confirm('删除组别目标「' + grp + '」？')) return;
+  const res = await API.del('/admin/group-targets/' + encodeURIComponent(grp));
+  if (res.ok) {
+    toast('已删除');
+    loadGroupTargets();
+    loadGroupReport();
+  } else {
+    toast(res.error || '删除失败');
+  }
+}
+
 /* 初始化 */
 (async function init() {
   // 设置日期范围默认值（本月）
@@ -674,6 +804,7 @@ async function loadOrders() {
   const today = now.toISOString().slice(0, 10);
   $("#filterStart").value = firstDay;
   $("#filterEnd").value = today;
+  $("#groupDate").value = today;
   
   loadReports(0);
   addProcRow(); // 订单管理默认一行工序输入

@@ -23,3 +23,10 @@ INSERT OR IGNORE INTO processes (order_no, proc_code, proc_name, mnemonic, unit_
 ('MO-20260803', 'GX02', '上袖', 'SX', 0.30, 1500),
 ('MO-20260803', 'GX03', '锁边', 'SB', 0.22, 2000),
 ('MO-20260803', 'GX06', '印花', 'YH', 0.40, 700);
+
+-- 组别目标（计算效率 / DCT 的基准，可在管理端修改）
+INSERT OR IGNORE INTO group_targets (grp, target_per_person, std_dct) VALUES
+('缝纫A组', 47, 0.4),
+('缝纫B组', 54, 0.4),
+('裁剪组', 33, 0.4),
+('后整组', 26, 0.4);

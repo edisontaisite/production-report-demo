@@ -155,15 +155,24 @@ router.get('/employees', async (req, res) => {
 
 router.post('/employees', async (req, res) => {
   const db = req.app.locals.db;
-  const { id, name, factory, grp } = req.body;
+  let { id, name, factory, grp } = req.body;
   
-  if (!id || !name || !factory || !grp) {
-    return res.status(400).json({ ok: false, error: '所有字段都不能为空' });
+  if (!name || !factory || !grp) {
+    return res.status(400).json({ ok: false, error: '姓名、工厂、组别都不能为空' });
   }
   
   try {
+    // 未填工号时自动生成：取最大数字工号 + 1
+    if (!id) {
+      const rows = await db.runQuery(
+        "SELECT id FROM employees WHERE id GLOB '[0-9]*' ORDER BY CAST(id AS INTEGER) DESC LIMIT 1"
+      );
+      const maxId = rows.length ? parseInt(rows[0].id, 10) : 1000;
+      id = String(maxId + 1);
+    }
+    
     await db.runInsert('INSERT INTO employees (id, name, factory, grp) VALUES (?, ?, ?, ?)', [id, name, factory, grp]);
-    res.json({ ok: true, message: '员工添加成功' });
+    res.json({ ok: true, id, message: '员工添加成功' });
   } catch (err) {
     if (err.message.includes('UNIQUE constraint failed')) {
       res.status(400).json({ ok: false, error: '工号已存在' });
@@ -266,6 +275,130 @@ router.post('/orders', async (req, res) => {
       console.error('添加订单失败:', err);
       res.status(500).json({ ok: false, error: '服务器错误' });
     }
+  }
+});
+
+// 组别目标配置
+router.get('/group-targets', async (req, res) => {
+  const db = req.app.locals.db;
+  try {
+    const rows = await db.runQuery('SELECT * FROM group_targets ORDER BY grp');
+    res.json({ ok: true, data: rows });
+  } catch (err) {
+    console.error('获取组别目标失败:', err);
+    res.status(500).json({ ok: false, error: '服务器错误' });
+  }
+});
+
+router.post('/group-targets', async (req, res) => {
+  const db = req.app.locals.db;
+  const { grp, target_per_person, std_dct } = req.body;
+  if (!grp) return res.status(400).json({ ok: false, error: '组别不能为空' });
+  const tpp = parseFloat(target_per_person);
+  const sd = parseFloat(std_dct);
+  if (isNaN(tpp) || tpp < 0) return res.status(400).json({ ok: false, error: '目标人均产量不合法' });
+  if (isNaN(sd) || sd <= 0) return res.status(400).json({ ok: false, error: '标准 DCT 不合法' });
+  try {
+    await db.runInsert(
+      'INSERT OR REPLACE INTO group_targets (grp, target_per_person, std_dct) VALUES (?, ?, ?)',
+      [grp, tpp, sd]
+    );
+    res.json({ ok: true, message: '组别目标已保存' });
+  } catch (err) {
+    console.error('保存组别目标失败:', err);
+    res.status(500).json({ ok: false, error: '服务器错误' });
+  }
+});
+
+router.delete('/group-targets/:grp', async (req, res) => {
+  const db = req.app.locals.db;
+  try {
+    await db.runInsert('DELETE FROM group_targets WHERE grp = ?', [req.params.grp]);
+    res.json({ ok: true, message: '已删除' });
+  } catch (err) {
+    console.error('删除组别目标失败:', err);
+    res.status(500).json({ ok: false, error: '服务器错误' });
+  }
+});
+
+// 组别日报：人数 / 产量 / 效率 / DCT / FPY
+router.get('/group-report', async (req, res) => {
+  const db = req.app.locals.db;
+  const date = req.query.date;
+  if (!date) return res.status(400).json({ ok: false, error: '日期不能为空' });
+  
+  try {
+    const employees = await db.runQuery('SELECT id, name, grp FROM employees ORDER BY grp, id');
+    const targets = await db.runQuery('SELECT * FROM group_targets');
+    const tMap = {};
+    for (const t of targets) tMap[t.grp] = t;
+    
+    // 各组当天上报明细
+    const items = await db.runQuery(`
+      SELECT e.grp, e.id as emp_id, SUM(ri.qty) as qty, SUM(ri.rqty) as rqty
+      FROM reports r
+      JOIN employees e ON r.emp_id = e.id
+      JOIN report_items ri ON ri.report_id = r.id
+      WHERE r.report_date = ?
+      GROUP BY e.grp, e.id
+    `, [date]);
+    
+    // 组 → 员工数 / 产量
+    const grpMap = {};   // grp -> { empIds:Set, qty, rqty }
+    const empGrp = {};   // emp_id -> grp
+    for (const e of employees) empGrp[e.id] = e.grp;
+    
+    const reportEmpIds = [];
+    for (const it of items) {
+      if (!grpMap[it.grp]) grpMap[it.grp] = { empIds: new Set(), qty: 0, rqty: 0 };
+      grpMap[it.grp].empIds.add(it.emp_id);
+      grpMap[it.grp].qty += it.qty || 0;
+      grpMap[it.grp].rqty += it.rqty || 0;
+      reportEmpIds.push(it.emp_id);
+    }
+    
+    // 按组汇总
+    const grps = {};
+    for (const e of employees) {
+      if (!grps[e.grp]) grps[e.grp] = { total: 0 };
+      grps[e.grp].total += 1;
+    }
+    
+    const rows = [];
+    for (const grp of Object.keys(grps)) {
+      const g = grpMap[grp] || { empIds: new Set(), qty: 0, rqty: 0 };
+      const headcount = g.empIds.size > 0 ? g.empIds.size : grps[grp].total;
+      const qty = Math.round(g.qty * 100) / 100;
+      const rqty = Math.round(g.rqty * 100) / 100;
+      const target = tMap[grp];
+      
+      let eff = null, dct = null, fpy = null;
+      if (target && target.target_per_person > 0 && qty > 0) {
+        eff = Math.round((qty / headcount) / target.target_per_person * 1000) / 10;
+      }
+      if (eff !== null && eff > 0 && target && target.std_dct > 0) {
+        dct = Math.round((target.std_dct * 100 / eff) * 100) / 100;
+      }
+      if (qty > 0) {
+        fpy = Math.round((qty - rqty) / qty * 1000) / 10;
+      }
+      
+      rows.push({
+        grp,
+        headcount,
+        qty,
+        efficiency: eff,
+        dct,
+        fpy,
+        has_target: !!target
+      });
+    }
+    rows.sort((a, b) => (a.grp < b.grp ? -1 : 1));
+    
+    res.json({ ok: true, date, data: rows });
+  } catch (err) {
+    console.error('获取组别日报失败:', err);
+    res.status(500).json({ ok: false, error: '服务器错误' });
   }
 });
 

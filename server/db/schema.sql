@@ -47,9 +47,18 @@ CREATE TABLE IF NOT EXISTS report_items (
   proc_code TEXT NOT NULL,      -- 工序代码
   proc_name TEXT NOT NULL,      -- 工序名称
   qty REAL NOT NULL,            -- 产量
+  rqty REAL NOT NULL DEFAULT 0, -- 返工数（用于计算 FPY）
   unit_price REAL NOT NULL,     -- 单价
   amount REAL NOT NULL,         -- 金额
   FOREIGN KEY (report_id) REFERENCES reports(id)
+);
+
+-- 组别目标表（用于计算效率 / DCT）
+CREATE TABLE IF NOT EXISTS group_targets (
+  grp TEXT PRIMARY KEY,                      -- 组别
+  target_per_person REAL NOT NULL DEFAULT 0, -- 目标人均产量（件/人/天）
+  std_dct REAL NOT NULL DEFAULT 0.4,         -- 标准 DCT（小时/件）
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 创建索引
