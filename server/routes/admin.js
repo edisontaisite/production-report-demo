@@ -191,39 +191,32 @@ router.get('/orders', async (req, res) => {
 
 router.post('/orders', async (req, res) => {
   const db = req.app.locals.db;
-  const database = db.db();
   const { order_no, style_no, product, processes } = req.body;
   
   if (!order_no || !processes || !Array.isArray(processes) || processes.length === 0) {
     return res.status(400).json({ ok: false, error: '制单号和工序列表不能为空' });
   }
   
-  database.serialize(() => {
-    database.run('BEGIN TRANSACTION');
+  try {
+    await db.runInsert('INSERT INTO orders (order_no, style_no, product) VALUES (?, ?, ?)', 
+      [order_no, style_no || '', product || '']);
     
-    try {
-      database.run('INSERT INTO orders (order_no, style_no, product) VALUES (?, ?, ?)', 
-        [order_no, style_no || '', product || '']);
-      
-      const stmt = database.prepare('INSERT INTO processes (order_no, proc_code, proc_name, mnemonic, unit_price, remaining) VALUES (?, ?, ?, ?, ?, ?)');
-      
-      for (const p of processes) {
-        stmt.run([order_no, p.proc_code, p.proc_name, p.mnemonic || '', p.unit_price || 0, p.remaining || 0]);
-      }
-      stmt.free();
-      
-      database.run('COMMIT');
-      res.json({ ok: true, message: '制单添加成功' });
-    } catch (err) {
-      database.run('ROLLBACK');
-      if (err.message.includes('UNIQUE constraint failed')) {
-        res.status(400).json({ ok: false, error: '制单号已存在' });
-      } else {
-        console.error('添加制单失败:', err);
-        res.status(500).json({ ok: false, error: '服务器错误' });
-      }
+    for (const p of processes) {
+      await db.runInsert(
+        'INSERT INTO processes (order_no, proc_code, proc_name, mnemonic, unit_price, remaining) VALUES (?, ?, ?, ?, ?, ?)',
+        [order_no, p.proc_code, p.proc_name, p.mnemonic || '', p.unit_price || 0, p.remaining || 0]
+      );
     }
-  });
+    
+    res.json({ ok: true, message: '制单添加成功' });
+  } catch (err) {
+    if (err.message.includes('UNIQUE constraint failed')) {
+      res.status(400).json({ ok: false, error: '制单号已存在' });
+    } else {
+      console.error('添加制单失败:', err);
+      res.status(500).json({ ok: false, error: '服务器错误' });
+    }
+  }
 });
 
 module.exports = router;
