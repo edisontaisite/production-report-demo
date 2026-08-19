@@ -2,7 +2,7 @@ services:
   - type: web
     name: production-report-demo
     env: docker
-    plan: free
+    plan: starter
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health
     envVars:
@@ -10,9 +10,8 @@ services:
         value: production
       - key: DB_PATH
         value: /data/production.db
-    # 数据持久化：将 plan 升级为 starter 或以上后可启用 disk，
-    # 挂载到 /data 后 SQLite 数据在重启/重新部署后不会丢失。
-    # disk:
-    #   name: sqlite-data
-    #   mountPath: /data
-    #   sizeGB: 1
+    # 数据持久化：挂载 SSD 到 /data，SQLite 数据在重启/重新部署后不丢失
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
