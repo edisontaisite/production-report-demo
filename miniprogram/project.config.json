@@ -1,7 +1,7 @@
 {
   "description": "员工产量上报小程序",
   "compileType": "miniprogram",
-  "appid": "touristappid",
+  "appid": "wxc3592847e0ba1ef5",
   "projectname": "production-report",
   "libVersion": "3.0.0",
   "setting": {
@@ -10,7 +10,29 @@
     "enhance": true,
     "postcss": true,
     "minified": true,
-    "ignoreUploadUnusedFiles": true
+    "ignoreUploadUnusedFiles": true,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "uploadWithSourceMap": true,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
   },
-  "condition": {}
+  "condition": {},
+  "simulatorPluginLibVersion": {},
+  "packOptions": {
+    "ignore": [],
+    "include": []
+  },
+  "editorSetting": {}
 }

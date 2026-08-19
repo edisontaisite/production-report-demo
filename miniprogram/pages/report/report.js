@@ -6,8 +6,11 @@ Page({
     empId: '',
     empInfo: null,
     empError: '',
+    empLoading: false,
     date: '',
     orders: [],           // [{order_no, product, label}]
+    ordersLoading: false,
+    ordersError: '',      // 订单列表加载失败提示
     rows: [],             // 明细行
     subtotalText: '0.00',
     saveAutofill: true,
@@ -21,23 +24,39 @@ Page({
     if (empId) this.loadEmployee(empId);
   },
 
+  onShow() {
+    // 上次订单列表没加载成功时，回页面自动重试
+    if (!this.data.orders.length && !this.data.ordersLoading && !this.data.ordersError) {
+      this.loadOrders();
+    }
+  },
+
   /* ---------- 数据加载 ---------- */
   loadOrders() {
+    if (this.data.ordersLoading) return;
+    this.setData({ ordersLoading: true, ordersError: '' });
     api.get('/orders').then((data) => {
       const orders = data.map((o) => ({
         ...o,
         label: o.order_no + (o.product ? '（' + o.product + '）' : '')
       }));
-      this.setData({ orders });
-    }).catch((err) => wx.showToast({ title: err.message, icon: 'none' }));
+      this.setData({ orders, ordersLoading: false, ordersError: '' });
+    }).catch((err) => {
+      this.setData({
+        ordersLoading: false,
+        ordersError: err.message + '（服务器可能正在唤醒，请稍后重试）'
+      });
+    });
   },
 
   loadEmployee(id) {
+    if (this.data.empLoading) return;
+    this.setData({ empLoading: true, empError: '' });
     api.get('/employees/' + encodeURIComponent(id)).then((info) => {
       wx.setStorageSync('emp_id', id);
-      this.setData({ empInfo: info, empError: '' });
-    }).catch(() => {
-      this.setData({ empInfo: null, empError: '未找到该工号' });
+      this.setData({ empInfo: info, empError: '', empLoading: false });
+    }).catch((err) => {
+      this.setData({ empInfo: null, empError: err.message, empLoading: false });
     });
   },
 
@@ -53,6 +72,10 @@ Page({
       return;
     }
     this.loadEmployee(id);
+  },
+
+  onEmpConfirm() {
+    this.onEmpBlur();
   },
 
   onDateChange(e) {

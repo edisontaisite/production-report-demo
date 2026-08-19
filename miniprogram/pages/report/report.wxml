@@ -3,7 +3,8 @@
   <view class="card">
     <view class="label required">员工工号</view>
     <input class="input" type="number" value="{{empId}}" bindinput="onEmpInput"
-      bindblur="onEmpBlur" placeholder="请填写工号（试 1001~1004）" placeholder-class="ph" />
+      bindblur="onEmpBlur" bindconfirm="onEmpConfirm" placeholder="请填写工号（试 1001~1004）" placeholder-class="ph" />
+    <view class="meta" wx:if="{{empLoading}}">查询中...</view>
     <view class="err" wx:if="{{empError}}">{{empError}}</view>
     <view class="info" wx:if="{{empInfo}}">{{empInfo.name}} · {{empInfo.factory}} · {{empInfo.grp}}</view>
 
@@ -11,6 +12,12 @@
     <picker mode="date" value="{{date}}" bindchange="onDateChange">
       <view class="input">{{date}}</view>
     </picker>
+  </view>
+
+  <!-- 订单加载失败提示 -->
+  <view class="card load-error" wx:if="{{ordersError}}">
+    <text>{{ordersError}}</text>
+    <button class="btn-retry" bindtap="loadOrders">重新加载</button>
   </view>
 
   <!-- 产量明细 -->
