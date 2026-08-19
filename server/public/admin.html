@@ -82,9 +82,15 @@
   .employee-card .edit-form{display:flex; gap:6px; flex-wrap:wrap; flex:1; margin-right:10px;}
   .employee-card .edit-form input{width:88px; height:30px; font-size:13px;}
 
-  /* 制单管理样式 */
-  .order-form{display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px;}
-  .order-form input, .order-form select{width:140px;}
+  /* 订单管理样式 */
+  .order-form{display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px;}
+  .order-form input, .order-form select{width:160px;}
+  .proc-form-title{font-size:13px; color:#666; margin-bottom:6px;}
+  .proc-table{width:100%; border-collapse:collapse;}
+  .proc-table th{background:#fafafa; font-weight:500; color:#666; font-size:12px; text-align:left; padding:6px 8px; border:1px solid #eee;}
+  .proc-table td{padding:4px 8px; border:1px solid #eee;}
+  .proc-table input{width:100%; height:32px; font-size:13px; box-sizing:border-box;}
+  .proc-actions{display:flex; gap:10px; margin-top:10px;}
   .order-card{background:#fafafa; border-radius:8px; padding:14px; margin-bottom:12px;}
   .order-card .header{display:flex; justify-content:space-between; margin-bottom:8px;}
   .order-card .order-no{font-weight:500;}
@@ -109,7 +115,7 @@
   <div class="nav-item active" data-tab="reports">上报记录</div>
   <div class="nav-item" data-tab="stats">统计数据</div>
   <div class="nav-item" data-tab="employees">员工管理</div>
-  <div class="nav-item" data-tab="orders">制单管理</div>
+  <div class="nav-item" data-tab="orders">订单管理</div>
 </div>
 
 <div class="container">
@@ -176,13 +182,13 @@
 
     <div class="card">
       <div class="card-header">
-        <h2>各制单统计</h2>
+        <h2>各订单统计</h2>
       </div>
       <div class="card-body" style="padding:0">
         <table>
           <thead>
             <tr>
-              <th>制单号</th>
+              <th>订单号</th>
               <th>产品</th>
               <th>总产量</th>
               <th>总金额</th>
@@ -240,11 +246,42 @@
     </div>
   </div>
 
-  <!-- 制单管理 -->
+  <!-- 订单管理 -->
   <div class="tab-content" id="tab-orders">
     <div class="card">
       <div class="card-header">
-        <h2>制单列表</h2>
+        <h2>添加订单</h2>
+      </div>
+      <div class="card-body">
+        <div class="order-form">
+          <input type="text" id="newOrderNo" placeholder="订单号（必填）">
+          <input type="text" id="newStyleNo" placeholder="款号（可选）">
+          <input type="text" id="newProduct" placeholder="产品名称（可选）">
+        </div>
+        <div class="proc-form-title">工序明细（至少一条）</div>
+        <table class="proc-table">
+          <thead>
+            <tr>
+              <th style="width:18%">工序代码</th>
+              <th style="width:24%">工序名称</th>
+              <th style="width:14%">工价</th>
+              <th style="width:14%">剩余产量</th>
+              <th>助记码</th>
+              <th style="width:64px"></th>
+            </tr>
+          </thead>
+          <tbody id="procRows"></tbody>
+        </table>
+        <div class="proc-actions">
+          <button class="btn-secondary" onclick="addProcRow()">＋ 添加工序</button>
+          <button class="btn-primary" onclick="addOrder()">添加订单</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2>订单列表</h2>
       </div>
       <div class="card-body">
         <div id="orderList">
@@ -514,17 +551,74 @@ async function addEmployee() {
   }
 }
 
-/* 制单管理 */
+/* 订单管理 */
+function addProcRow(p) {
+  const tbody = $("#procRows");
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td><input class="p-code" placeholder="如 GX09" value="${p ? p.proc_code : ''}"></td>
+    <td><input class="p-name" placeholder="如 烫领" value="${p ? p.proc_name : ''}"></td>
+    <td><input class="p-price" placeholder="单价" inputmode="decimal" value="${p ? p.unit_price : ''}"></td>
+    <td><input class="p-remaining" placeholder="初始剩余" inputmode="decimal" value="${p ? p.remaining : ''}"></td>
+    <td><input class="p-mn" placeholder="可选" value="${p ? (p.mnemonic || '') : ''}"></td>
+    <td><button class="btn-mini danger" onclick="this.closest('tr').remove()">删除</button></td>
+  `;
+  tbody.appendChild(tr);
+}
+
+async function addOrder() {
+  const orderNo = $("#newOrderNo").value.trim();
+  const styleNo = $("#newStyleNo").value.trim();
+  const product = $("#newProduct").value.trim();
+  
+  if (!orderNo) return toast('请填写订单号');
+  
+  const processes = [];
+  for (const tr of $("#procRows").children) {
+    const code = tr.querySelector('.p-code').value.trim();
+    const name = tr.querySelector('.p-name').value.trim();
+    const price = parseFloat(tr.querySelector('.p-price').value);
+    const remaining = parseFloat(tr.querySelector('.p-remaining').value);
+    const mnemonic = tr.querySelector('.p-mn').value.trim();
+    
+    if (!code && !name && isNaN(price) && isNaN(remaining) && !mnemonic) continue; // 跳过空行
+    if (!code || !name) return toast('工序代码和工序名称不能为空');
+    if (isNaN(price) || price < 0) return toast(`工序 ${code} 的工价不合法`);
+    
+    processes.push({
+      proc_code: code,
+      proc_name: name,
+      unit_price: price || 0,
+      remaining: isNaN(remaining) ? 0 : remaining,
+      mnemonic: mnemonic
+    });
+  }
+  if (!processes.length) return toast('请至少添加一道工序');
+  
+  const res = await API.post('/admin/orders', { order_no: orderNo, style_no: styleNo, product, processes });
+  if (res.ok) {
+    toast('订单添加成功');
+    $("#newOrderNo").value = '';
+    $("#newStyleNo").value = '';
+    $("#newProduct").value = '';
+    $("#procRows").innerHTML = '';
+    addProcRow();
+    loadOrders();
+  } else {
+    toast(res.error || '添加失败');
+  }
+}
+
 async function loadOrders() {
   const res = await API.get('/admin/orders');
   const list = $("#orderList");
   
   if (!res.ok || !res.data.length) {
-    list.innerHTML = '<div class="empty">暂无制单</div>';
+    list.innerHTML = '<div class="empty">暂无订单</div>';
     return;
   }
   
-  // 需要获取每个制单的工序
+  // 需要获取每个订单的工序
   let html = '';
   for (const order of res.data) {
     const procRes = await API.get(`/orders/${order.order_no}/processes`);
@@ -560,6 +654,7 @@ async function loadOrders() {
   $("#filterEnd").value = today;
   
   loadReports(0);
+  addProcRow(); // 订单管理默认一行工序输入
 })();
 </script>
 </body>

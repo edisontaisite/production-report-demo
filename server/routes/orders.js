@@ -30,7 +30,7 @@ router.get('/:orderNo/processes', async (req, res) => {
     );
     
     if (processes.length === 0) {
-      return res.status(404).json({ ok: false, error: '制单不存在' });
+      return res.status(404).json({ ok: false, error: '订单不存在' });
     }
     
     res.json({ ok: true, data: processes });

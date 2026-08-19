@@ -24,7 +24,7 @@ router.post('/', async (req, res) => {
       const item = items[i];
       const n = i + 1;
       
-      if (!item.order_no) throw new Error(`第${n}行：制单号不能为空`);
+      if (!item.order_no) throw new Error(`第${n}行：订单号不能为空`);
       if (!item.proc_code) throw new Error(`第${n}行：工序代码不能为空`);
       if (!item.qty || item.qty <= 0) throw new Error(`第${n}行：产量必须大于0`);
       
@@ -34,7 +34,7 @@ router.post('/', async (req, res) => {
       );
       
       if (processes.length === 0) {
-        throw new Error(`第${n}行：制单号/工序代码不匹配`);
+        throw new Error(`第${n}行：订单号/工序代码不匹配`);
       }
       
       const process = processes[0];

@@ -208,7 +208,7 @@ const api = {
   }
 };
 
-let ORDERS = []; // 制单列表缓存（启动时加载）
+let ORDERS = []; // 订单列表缓存（启动时加载）
 async function initData() {
   ORDERS = await api.get('/orders');
 }
@@ -275,7 +275,7 @@ function addRow(preset) {
     </div>
     <div class="detail-body">
       <div class="field">
-        <div class="label req">制单号</div>
+        <div class="label req">订单号</div>
         <select class="ctrl js-order placeholder-opt">${orderOptions(preset&&preset.order_no)}</select>
       </div>
       <div class="field">
@@ -283,7 +283,7 @@ function addRow(preset) {
         <select class="ctrl js-proc placeholder-opt"><option value="" selected disabled>请选择</option></select>
       </div>
       <div class="field">
-        <div class="label">制单工序助记码</div>
+        <div class="label">工序助记码</div>
         <input class="ctrl js-mnemonic" placeholder="请填写内容" autocomplete="off">
       </div>
       <div class="field">
@@ -414,7 +414,7 @@ $("#submitBtn").onclick = async () => {
     const orderNo = $(".js-order", el).value, procCode = $(".js-proc", el).value;
     const qty = parseFloat($(".js-qty", el).value);
     const n = $(".badge", el).textContent;
-    if (!orderNo || !procCode) return toast(`第${n}行：请选择制单号和工序`);
+    if (!orderNo || !procCode) return toast(`第${n}行：请选择订单号和工序`);
     if (!validateRow(el) || isNaN(qty)) return toast(`第${n}行：产量不合法`);
     items.push({order_no:orderNo, proc_code:procCode, qty});
   }
@@ -454,7 +454,7 @@ $("#moreBtn").onclick = () => $("#resetBtn").click();
 (async function init(){
   const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
   $("#reportDate").value = d.toISOString().slice(0,10);
-  try { await initData(); } catch (e) { toast("加载制单数据失败：" + e.message, 3000); }
+  try { await initData(); } catch (e) { toast("加载订单数据失败：" + e.message, 3000); }
   addRow();
 })();
 </script>

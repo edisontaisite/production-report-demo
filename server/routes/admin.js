@@ -124,7 +124,7 @@ router.get('/export', async (req, res) => {
       ORDER BY r.report_date DESC, e.id
     `, params);
     
-    const headers = ['日期', '工号', '姓名', '工厂', '组别', '制单号', '工序', '产量', '单价', '金额', '小计'];
+    const headers = ['日期', '工号', '姓名', '工厂', '组别', '订单号', '工序', '产量', '单价', '金额', '小计'];
     const rows = reports.map(r => [
       r.report_date, r.emp_id, r.emp_name, r.factory, r.grp,
       r.order_no, r.proc_name, r.qty, r.unit_price, r.amount, r.subtotal
@@ -244,7 +244,7 @@ router.post('/orders', async (req, res) => {
   const { order_no, style_no, product, processes } = req.body;
   
   if (!order_no || !processes || !Array.isArray(processes) || processes.length === 0) {
-    return res.status(400).json({ ok: false, error: '制单号和工序列表不能为空' });
+    return res.status(400).json({ ok: false, error: '订单号和工序列表不能为空' });
   }
   
   try {
@@ -258,12 +258,12 @@ router.post('/orders', async (req, res) => {
       );
     }
     
-    res.json({ ok: true, message: '制单添加成功' });
+    res.json({ ok: true, message: '订单添加成功' });
   } catch (err) {
     if (err.message.includes('UNIQUE constraint failed')) {
-      res.status(400).json({ ok: false, error: '制单号已存在' });
+      res.status(400).json({ ok: false, error: '订单号已存在' });
     } else {
-      console.error('添加制单失败:', err);
+      console.error('添加订单失败:', err);
       res.status(500).json({ ok: false, error: '服务器错误' });
     }
   }
