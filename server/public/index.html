@@ -80,6 +80,7 @@
   .reset-row{margin:20px 2px 4px; text-align:center;}
   .reset-link{color:var(--muted); font-size:12px; text-decoration:underline; background:none;
     border:none; cursor:pointer; font-family:inherit;}
+  .demo-note{margin:6px 2px 0; text-align:center; color:var(--muted); font-size:11px; line-height:1.6;}
 
   .footer{position:fixed; left:0; right:0; bottom:0; z-index:20;
     max-width:480px; margin:0 auto; background:var(--card);
@@ -93,41 +94,17 @@
     background:rgba(0,0,0,.82); color:#fff; padding:12px 18px; border-radius:10px;
     font-size:14px; z-index:50; max-width:80%; text-align:center; display:none;}
   .toast.show{display:block;}
-
-  .loading{position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);
-    background:rgba(0,0,0,.6); color:#fff; padding:16px 24px; border-radius:10px;
-    font-size:14px; z-index:100; display:none;}
-  .loading.show{display:block;}
-
-  /* 历史记录 */
-  .history-panel{display:none; position:fixed; left:0; right:0; top:0; bottom:0; z-index:30;
-    background:var(--bg);}
-  .history-panel.show{display:block;}
-  .history-header{display:flex; align-items:center; height:48px; padding:0 12px;
-    background:var(--card); border-bottom:1px solid var(--line);}
-  .history-header .back{color:var(--blue); font-size:15px; cursor:pointer;}
-  .history-header h3{flex:1; text-align:center; font-size:17px; margin:0; font-weight:600;}
-  .history-content{flex:1; overflow-y:auto; padding:12px;}
-  .history-empty{text-align:center; color:var(--muted); padding:40px 0;}
-  .history-item{background:var(--card); border-radius:10px; padding:14px; margin-bottom:12px;}
-  .history-item .date{font-size:13px; color:var(--muted); margin-bottom:8px;}
-  .history-item .total{font-size:16px; font-weight:600; color:var(--green-d);}
-  .history-item .count{font-size:12px; color:var(--muted); margin-top:4px;}
-  .history-detail{margin-top:10px; padding-top:10px; border-top:1px dashed var(--line);}
-  .history-row{display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;}
-  .history-row .proc{color:#333;}
-  .history-row .amount{color:var(--green-d);}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="topbar">
     <div class="row">
-      <div class="close" id="backBtn">←</div>
+      <div class="close">✕</div>
       <div class="title">员工产量上报</div>
-      <div class="more" id="moreBtn" title="菜单">⋯</div>
+      <div class="more" id="moreBtn" title="重置演示数据">⋯</div>
     </div>
-    <div class="url" id="urlLabel">生产环境 · 服务器</div>
+    <div class="url">演示 · 本地数据</div>
     <div class="accent"></div>
   </div>
 
@@ -136,7 +113,7 @@
 
     <div class="field">
       <div class="label req">员工工号</div>
-      <input id="empId" class="ctrl" placeholder="请填写工号" inputmode="numeric" autocomplete="off">
+      <input id="empId" class="ctrl" placeholder="请填写内容（试 1001~1004）" inputmode="numeric" autocomplete="off">
       <div class="err" id="empErr">未找到该工号</div>
     </div>
 
@@ -178,9 +155,15 @@
       <div class="ctrl ro empty" id="subtotal">暂无内容</div>
     </div>
 
+    <label class="save-row">
+      <input type="checkbox" id="saveAutofill" checked>
+      <span>保存本次提交内容，下次自动填充</span>
+    </label>
+
     <div class="reset-row">
-      <button class="reset-link" id="historyBtn">📋 查看上报历史</button>
+      <button class="reset-link" id="resetBtn">重置演示数据</button>
     </div>
+    <div class="demo-note">演示版：数据保存在你当前浏览器本地，各自独立、互不影响。</div>
   </div>
 
   <div class="footer">
@@ -188,20 +171,7 @@
   </div>
 </div>
 
-<!-- 历史记录面板 -->
-<div class="history-panel" id="historyPanel">
-  <div class="history-header">
-    <div class="back" id="historyBack">← 返回</div>
-    <h3>我的上报历史</h3>
-    <div style="width:50px"></div>
-  </div>
-  <div class="history-content" id="historyContent">
-    <div class="history-empty">加载中...</div>
-  </div>
-</div>
-
 <div class="toast" id="toast"></div>
-<div class="loading" id="loading">处理中...</div>
 
 <script>
 "use strict";
@@ -212,70 +182,113 @@ const toast = (msg, ms=1800) => {
   const t = $("#toast"); t.textContent = msg; t.classList.add("show");
   clearTimeout(toast._t); toast._t = setTimeout(()=>t.classList.remove("show"), ms);
 };
-const showLoading = (msg='处理中...') => { $("#loading").textContent = msg; $("#loading").classList.add("show"); };
-const hideLoading = () => $("#loading").classList.remove("show");
 
-/* ---------- API 客户端 ---------- */
-const API = {
-  async getEmployee(id) {
-    const res = await fetch(`/api/employees/${id}`);
-    return res.json();
+/* ---------- 种子数据（原后端 seed 的前端版） ---------- */
+const SEED = {
+  employees: {
+    "1001": {name:"张伟", factory:"华南一厂", grp:"缝纫A组"},
+    "1002": {name:"李娜", factory:"华南一厂", grp:"缝纫B组"},
+    "1003": {name:"王芳", factory:"华东二厂", grp:"裁剪组"},
+    "1004": {name:"刘洋", factory:"华东二厂", grp:"后整组"},
   },
-  async getOrders() {
-    const res = await fetch('/api/orders');
-    return res.json();
-  },
-  async getProcesses(orderNo) {
-    const res = await fetch(`/api/orders/${orderNo}/processes`);
-    return res.json();
-  },
-  async submitReport(payload) {
-    const res = await fetch('/api/reports', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    return res.json();
-  },
-  async getHistory(empId, limit=20) {
-    const res = await fetch(`/api/reports/history/${empId}?limit=${limit}`);
-    return res.json();
-  }
+  orders: [
+    {order_no:"MO-20260801", style_no:"SH-100", product:"男士长袖衬衫"},
+    {order_no:"MO-20260802", style_no:"DR-220", product:"女士连衣裙"},
+    {order_no:"MO-20260803", style_no:"TS-330", product:"儿童纯棉T恤"},
+  ],
+  // 制单工序基准（剩余产量的初始值）
+  processes: [
+    {order_no:"MO-20260801", proc_code:"GX01", proc_name:"车领",    mnemonic:"CL",   unit_price:0.35, remaining:800},
+    {order_no:"MO-20260801", proc_code:"GX02", proc_name:"上袖",    mnemonic:"SX",   unit_price:0.42, remaining:650},
+    {order_no:"MO-20260801", proc_code:"GX03", proc_name:"锁边",    mnemonic:"SB",   unit_price:0.28, remaining:1200},
+    {order_no:"MO-20260801", proc_code:"GX07", proc_name:"钉纽",    mnemonic:"DN",   unit_price:0.15, remaining:950},
+    {order_no:"MO-20260802", proc_code:"GX04", proc_name:"车缝侧骨", mnemonic:"CFCG", unit_price:0.55, remaining:500},
+    {order_no:"MO-20260802", proc_code:"GX05", proc_name:"上拉链",  mnemonic:"SLL",  unit_price:0.65, remaining:300},
+    {order_no:"MO-20260802", proc_code:"GX08", proc_name:"钉扣",    mnemonic:"DK",   unit_price:0.18, remaining:900},
+    {order_no:"MO-20260803", proc_code:"GX02", proc_name:"上袖",    mnemonic:"SX",   unit_price:0.30, remaining:1500},
+    {order_no:"MO-20260803", proc_code:"GX03", proc_name:"锁边",    mnemonic:"SB",   unit_price:0.22, remaining:2000},
+    {order_no:"MO-20260803", proc_code:"GX06", proc_name:"印花",    mnemonic:"YH",   unit_price:0.40, remaining:700},
+  ],
 };
 
-/* ---------- 状态 ---------- */
-let ORDERS = [];
+/* ---------- 本地存储层（替代 SQLite） ---------- */
+const LS_KEY = "prod_report_state_v2";
+let STATE = loadState();
+
+function freshState() {
+  const remaining = {};
+  for (const p of SEED.processes) remaining[p.order_no + "|" + p.proc_code] = p.remaining;
+  return { remaining, reports: [], lastByEmp: {} };
+}
+function loadState() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  const s = freshState(); persist(s); return s;
+}
+function persist(s = STATE) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(s)); } catch (e) {}
+}
+
+/* ---------- 业务函数（对应原后端 API） ---------- */
+function getEmployee(id) { return SEED.employees[id] || null; }
+function getOrders() { return SEED.orders; }
+function getProcesses(orderNo) {
+  return SEED.processes
+    .filter(p => p.order_no === orderNo)
+    .map(p => ({...p, remaining: STATE.remaining[p.order_no + "|" + p.proc_code]}));
+}
+function findProc(orderNo, procCode) {
+  const base = SEED.processes.find(p => p.order_no === orderNo && p.proc_code === procCode);
+  if (!base) return null;
+  return {...base, remaining: STATE.remaining[orderNo + "|" + procCode]};
+}
+function submitReport(payload) {
+  const {emp_id, report_date, items, save_autofill} = payload;
+  if (!getEmployee(emp_id)) return {ok:false, error:"员工工号不存在"};
+  const resolved = [];
+  for (let i=0; i<items.length; i++) {
+    const it = items[i], n = i+1;
+    const pr = findProc(it.order_no, it.proc_code);
+    if (!pr) return {ok:false, error:`第${n}行：制单号/工序代码不匹配`};
+    const qty = Number(it.qty);
+    if (!(qty > 0)) return {ok:false, error:`第${n}行：产量必须大于0`};
+    if (qty > pr.remaining) return {ok:false, error:`第${n}行：产量 ${fmtQty(qty)} 超过剩余产量 ${fmtQty(pr.remaining)}`};
+    resolved.push({pr, qty});
+  }
+  let subtotal = 0;
+  const result = [];
+  for (const {pr, qty} of resolved) {
+    const amount = Math.round(pr.unit_price*qty*100)/100;
+    subtotal += amount;
+    STATE.remaining[pr.order_no + "|" + pr.proc_code] = Math.round((pr.remaining - qty)*100)/100;
+    result.push({order_no:pr.order_no, proc_code:pr.proc_code, qty, amount});
+  }
+  subtotal = Math.round(subtotal*100)/100;
+  const report = {id: STATE.reports.length+1, emp_id, report_date, subtotal, items: result, ts: Date.now()};
+  STATE.reports.push(report);
+  if (save_autofill) STATE.lastByEmp[emp_id] = items.map(it => ({order_no:it.order_no, proc_code:it.proc_code, qty:Number(it.qty)}));
+  persist();
+  return {ok:true, report_id:report.id, subtotal, items:result};
+}
+function getLast(emp_id) {
+  const items = STATE.lastByEmp[emp_id];
+  return items && items.length ? {found:true, items} : {found:false};
+}
+
+/* ---------- 界面逻辑 ---------- */
+const ORDERS = getOrders();
 let seq = 0;
 const rows = new Map();
 
-/* ---------- 界面逻辑 ---------- */
-function setRO(sel, val) {
-  const el=$(sel); el.textContent=val||"暂无内容"; el.classList.toggle("empty", !val);
-}
-
-async function loadEmployee() {
+function loadEmployee() {
   const id = $("#empId").value.trim();
-  if (!id) { 
-    setRO("#empName",""); setRO("#empFactory",""); setRO("#empGrp",""); 
-    $("#empErr").classList.remove("show"); return; 
-  }
-  try {
-    const res = await API.getEmployee(id);
-    if (res.ok) {
-      const e = res.data;
-      setRO("#empName", e.name);
-      setRO("#empFactory", e.factory);
-      setRO("#empGrp", e.grp);
-      $("#empErr").classList.remove("show");
-    } else {
-      setRO("#empName",""); setRO("#empFactory",""); setRO("#empGrp","");
-      $("#empErr").classList.add("show");
-    }
-  } catch (err) {
-    console.error('loadEmployee error:', err);
-    setRO("#empName",""); setRO("#empFactory",""); setRO("#empGrp","");
-    $("#empErr").classList.add("show");
-  }
+  const setRO = (sel, val) => { const el=$(sel); el.textContent=val||"暂无内容"; el.classList.toggle("empty", !val); };
+  if (!id) { setRO("#empName",""); setRO("#empFactory",""); setRO("#empGrp",""); $("#empErr").classList.remove("show"); return; }
+  const e = getEmployee(id);
+  if (e) { setRO("#empName",e.name); setRO("#empFactory",e.factory); setRO("#empGrp",e.grp); $("#empErr").classList.remove("show"); }
+  else { setRO("#empName",""); setRO("#empFactory",""); setRO("#empGrp",""); $("#empErr").classList.add("show"); }
 }
 
 function orderOptions(selected) {
@@ -355,25 +368,17 @@ function addRow(preset) {
   return el;
 }
 
-async function fillProcOptions(el, orderNo, selectedCode) {
+function fillProcOptions(el, orderNo, selectedCode) {
   const procSel = $(".js-proc", el);
   procSel.innerHTML = `<option value="" ${selectedCode?"":"selected"} disabled>请选择</option>`;
   if (!orderNo) return;
-  try {
-    const res = await API.getProcesses(orderNo);
-    if (res.ok) {
-      for (const p of res.data) {
-        const opt = document.createElement("option");
-        opt.value = p.proc_code; 
-        opt.textContent = p.proc_code + " " + p.proc_name + " (剩余:" + p.remaining + ")";
-        if (selectedCode === p.proc_code) opt.selected = true;
-        procSel.appendChild(opt);
-      }
-      if (selectedCode) procSel.classList.remove("placeholder-opt");
-    }
-  } catch (err) {
-    console.error('fillProcOptions error:', err);
+  for (const p of getProcesses(orderNo)) {
+    const opt = document.createElement("option");
+    opt.value = p.proc_code; opt.textContent = p.proc_code + " " + p.proc_name;
+    if (selectedCode === p.proc_code) opt.selected = true;
+    procSel.appendChild(opt);
   }
+  if (selectedCode) procSel.classList.remove("placeholder-opt");
 }
 
 function clearProcDetail(el) {
@@ -383,26 +388,14 @@ function clearProcDetail(el) {
   rows.get(+el.dataset.id).proc = null; validateRow(el); recalc();
 }
 
-async function applyProc(el, orderNo, procCode) {
+function applyProc(el, orderNo, procCode) {
   if (!orderNo || !procCode) return;
-  try {
-    const res = await API.getProcesses(orderNo);
-    if (res.ok) {
-      const p = res.data.find(x => x.proc_code === procCode);
-      if (p) {
-        const put = (sel, val) => { const x=$(sel,el); x.textContent=val; x.classList.remove("empty"); };
-        put(".js-name", p.proc_name); 
-        put(".js-price", money(p.unit_price)); 
-        put(".js-remaining", fmtQty(p.remaining));
-        const mn = $(".js-mnemonic", el); if (!mn.value) mn.value = p.mnemonic || "";
-        rows.get(+el.dataset.id).proc = p; 
-        validateRow(el); 
-        recalc();
-      }
-    }
-  } catch (err) {
-    console.error('applyProc error:', err);
-  }
+  const p = findProc(orderNo, procCode);
+  if (!p) return;
+  const put = (sel, val) => { const x=$(sel,el); x.textContent=val; x.classList.remove("empty"); };
+  put(".js-name", p.proc_name); put(".js-price", money(p.unit_price)); put(".js-remaining", fmtQty(p.remaining));
+  const mn = $(".js-mnemonic", el); if (!mn.value) mn.value = p.mnemonic || "";
+  rows.get(+el.dataset.id).proc = p; validateRow(el); recalc();
 }
 
 function validateRow(el) {
@@ -443,7 +436,7 @@ $("#addTop").onclick = () => addRow();
 $("#empId").addEventListener("change", loadEmployee);
 $("#empId").addEventListener("blur", loadEmployee);
 
-$("#submitBtn").onclick = async () => {
+$("#submitBtn").onclick = () => {
   const empId = $("#empId").value.trim();
   if (!empId) return toast("请填写员工工号");
   if ($("#empName").classList.contains("empty")) return toast("员工工号无效");
@@ -458,86 +451,26 @@ $("#submitBtn").onclick = async () => {
   }
   if (!items.length) return toast("请至少添加一条产量明细");
 
-  showLoading();
-  try {
-    const res = await API.submitReport({
-      emp_id: empId,
-      report_date: $("#reportDate").value,
-      items
-    });
-    hideLoading();
-    if (res.ok) {
-      toast(`提交成功 ✓  工价小计 ¥${money(res.subtotal)}`, 2600);
-      $("#details").innerHTML=""; rows.clear(); seq=0; recalc();
-      addRow();
-    } else {
-      toast(res.error || '提交失败', 2600);
-    }
-  } catch (err) {
-    hideLoading();
-    console.error('submit error:', err);
-    toast('网络错误，请重试', 2600);
-  }
+  const res = submitReport({emp_id:empId, report_date:$("#reportDate").value, save_autofill:$("#saveAutofill").checked, items});
+  if (!res.ok) return toast(res.error, 2600);
+  toast(`提交成功 ✓  工价小计 ¥${money(res.subtotal)}`, 2600);
+  $("#details").innerHTML=""; rows.clear(); seq=0; recalc();
+  if ($("#saveAutofill").checked) { const last = getLast(empId); if (last.found) { last.items.forEach(it => addRow(it)); return; } }
+  addRow();
 };
 
-/* 历史记录 */
-$("#historyBtn").onclick = () => {
-  const empId = $("#empId").value.trim();
-  if (!empId || $("#empName").classList.contains("empty")) {
-    toast("请先输入有效的员工工号");
-    return;
-  }
-  $("#historyPanel").addClass("show");
-  loadHistory(empId);
+$("#resetBtn").onclick = () => {
+  if (!confirm("重置演示数据？将清空所有上报记录并恢复初始剩余产量。")) return;
+  STATE = freshState(); persist();
+  $("#details").innerHTML=""; rows.clear(); seq=0; recalc(); addRow();
+  toast("已重置演示数据");
 };
-
-$("#historyBack").onclick = () => {
-  $("#historyPanel").removeClass("show");
-};
-
-async function loadHistory(empId) {
-  const content = $("#historyContent");
-  content.innerHTML = '<div class="history-empty">加载中...</div>';
-  try {
-    const res = await API.getHistory(empId);
-    if (res.ok && res.data.length > 0) {
-      content.innerHTML = res.data.map(r => `
-        <div class="history-item">
-          <div class="date">${r.report_date} · 共${r.items.length}条明细</div>
-          <div class="total">¥${money(r.subtotal)}</div>
-          <div class="history-detail">
-            ${r.items.map(item => `
-              <div class="history-row">
-                <span class="proc">${item.order_no} · ${item.proc_name} × ${item.qty}</span>
-                <span class="amount">¥${money(item.amount)}</span>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-      `).join('');
-    } else {
-      content.innerHTML = '<div class="history-empty">暂无上报记录</div>';
-    }
-  } catch (err) {
-    content.innerHTML = '<div class="history-empty">加载失败</div>';
-  }
-}
+$("#moreBtn").onclick = () => $("#resetBtn").click();
 
 /* ---------- 初始化 ---------- */
-(async function init(){
-  // 加载制单列表
-  try {
-    const res = await API.getOrders();
-    if (res.ok) ORDERS = res.data;
-  } catch (err) {
-    console.error('load orders error:', err);
-  }
-
-  // 设置默认日期
+(function init(){
   const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
   $("#reportDate").value = d.toISOString().slice(0,10);
-
-  // 添加一行
   addRow();
 })();
 </script>
