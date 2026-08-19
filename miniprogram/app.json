@@ -1,7 +1,8 @@
 {
   "pages": [
     "pages/report/report",
-    "pages/history/history"
+    "pages/history/history",
+    "pages/admin/admin"
   ],
   "window": {
     "navigationBarTitleText": "员工产量上报",
@@ -23,6 +24,10 @@
       {
         "pagePath": "pages/history/history",
         "text": "我的上报"
+      },
+      {
+        "pagePath": "pages/admin/admin",
+        "text": "后台管理"
       }
     ]
   },
