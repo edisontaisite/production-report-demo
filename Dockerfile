@@ -1,6 +1,13 @@
-FROM node:18
+FROM node:20-bookworm-slim
 
 WORKDIR /app
+
+# 安装 sqlite3 编译依赖
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
 
 # 复制 package.json 并安装依赖
 COPY package*.json ./
