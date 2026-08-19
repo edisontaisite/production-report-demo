@@ -52,7 +52,7 @@ router.get('/reports', async (req, res) => {
 
 router.get('/stats', async (req, res) => {
   const db = req.app.locals.db;
-  const { start_date, end_date } = req.query;
+  const { start_date, end_date, today } = req.query;
   
   try {
     let where = [];
@@ -63,9 +63,14 @@ router.get('/stats', async (req, res) => {
     
     const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
     
+    // 今日统计用客户端传来的本地日期（服务器时区可能与用户不同）
+    const todayCond = today && /^\d{4}-\d{2}-\d{2}$/.test(today)
+      ? { where: 'report_date = ?', params: [today] }
+      : { where: "report_date = date('now')", params: [] };
+    
     const totalResult = await db.runQuery(`SELECT COALESCE(SUM(subtotal), 0) as total FROM reports ${whereClause}`, params);
-    const todayResult = await db.runQuery(`SELECT COUNT(*) as count FROM reports WHERE report_date = date('now')`);
-    const todayAmountResult = await db.runQuery(`SELECT COALESCE(SUM(subtotal), 0) as total FROM reports WHERE report_date = date('now')`);
+    const todayResult = await db.runQuery(`SELECT COUNT(*) as count FROM reports WHERE ${todayCond.where}`, todayCond.params);
+    const todayAmountResult = await db.runQuery(`SELECT COALESCE(SUM(subtotal), 0) as total FROM reports WHERE ${todayCond.where}`, todayCond.params);
     
     const byOrder = await db.runQuery(`
       SELECT ri.order_no, o.product, SUM(ri.qty) as total_qty, SUM(ri.amount) as total_amount, COUNT(DISTINCT ri.report_id) as report_count
@@ -257,15 +262,17 @@ router.post('/orders', async (req, res) => {
   }
   
   try {
-    await db.runInsert('INSERT INTO orders (order_no, style_no, product) VALUES (?, ?, ?)', 
-      [order_no, style_no || '', product || '']);
-    
-    for (const p of processes) {
-      await db.runInsert(
-        'INSERT INTO processes (order_no, proc_code, proc_name, mnemonic, unit_price, remaining) VALUES (?, ?, ?, ?, ?, ?)',
-        [order_no, p.proc_code, p.proc_name, p.mnemonic || '', p.unit_price || 0, p.remaining || 0]
-      );
-    }
+    await db.runTransaction(async ({ run }) => {
+      await run('INSERT INTO orders (order_no, style_no, product) VALUES (?, ?, ?)',
+        [order_no, style_no || '', product || '']);
+      
+      for (const p of processes) {
+        await run(
+          'INSERT INTO processes (order_no, proc_code, proc_name, mnemonic, unit_price, remaining) VALUES (?, ?, ?, ?, ?, ?)',
+          [order_no, p.proc_code, p.proc_name, p.mnemonic || '', p.unit_price || 0, p.remaining || 0]
+        );
+      }
+    });
     
     res.json({ ok: true, message: '订单添加成功' });
   } catch (err) {
@@ -326,6 +333,7 @@ router.get('/group-report', async (req, res) => {
   const db = req.app.locals.db;
   const date = req.query.date;
   if (!date) return res.status(400).json({ ok: false, error: '日期不能为空' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ ok: false, error: '日期格式不正确' });
   
   try {
     const employees = await db.runQuery('SELECT id, name, grp FROM employees ORDER BY grp, id');

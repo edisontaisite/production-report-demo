@@ -33,9 +33,12 @@ function requestOnce(method, path, data) {
   });
 }
 
-// 带重试：首次请求若因服务器冷启动失败，3 秒后自动重试一次
+// GET 请求失败自动重试一次（应对 Render 冷启动）；
+// POST 不重试，避免网络超时时服务端已处理导致重复提交。
 function request(method, path, data, retried) {
-  return requestOnce(method, path, data).catch((err) => {
+  const promise = requestOnce(method, path, data);
+  if (method !== 'GET') return promise;
+  return promise.catch((err) => {
     if (retried) throw err;
     return new Promise((resolve, reject) => {
       setTimeout(() => {

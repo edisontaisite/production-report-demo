@@ -142,7 +142,30 @@ function runInsert(sql, params = []) {
   });
 }
 
-app.locals.db = { runQuery, runInsert, db: () => db };
+// 事务封装：callback 内可使用 { run, all }，全部成功才提交
+function runTransaction(callback) {
+  return new Promise((resolve, reject) => {
+    db.serialize(() => {
+      db.run('BEGIN');
+      const run = (sql, params = []) => new Promise((res, rej) => {
+        db.run(sql, params, function(err) {
+          if (err) rej(err);
+          else res({ lastID: this.lastID, changes: this.changes });
+        });
+      });
+      const all = (sql, params = []) => new Promise((res, rej) => {
+        db.all(sql, params, (err, rows) => (err ? rej(err) : res(rows)));
+      });
+      Promise.resolve(callback({ run, all })).then((value) => {
+        db.run('COMMIT', (err) => (err ? reject(err) : resolve(value)));
+      }).catch((err) => {
+        db.run('ROLLBACK', () => reject(err));
+      });
+    });
+  });
+}
+
+app.locals.db = { runQuery, runInsert, runTransaction, db: () => db };
 
 app.use(cors());
 app.use(express.json());

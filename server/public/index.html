@@ -209,10 +209,6 @@ async function initData() {
 }
 
 /* ---------- 业务函数（对接后端 API） ---------- */
-async function getEmployee(id) {
-  try { return await api.get('/employees/' + encodeURIComponent(id)); }
-  catch (e) { return null; }
-}
 async function getProcesses(orderNo) {
   return await api.get('/orders/' + encodeURIComponent(orderNo) + '/processes');
 }
@@ -228,7 +224,15 @@ async function getLast(emp_id) {
   try {
     const data = await api.get('/reports/history/' + encodeURIComponent(emp_id) + '?limit=1');
     if (data && data.length && data[0].items && data[0].items.length) {
-      return { found: true, items: data[0].items.map(it => ({ order_no: it.order_no, proc_code: it.proc_code, qty: it.qty })) };
+      return {
+        found: true,
+        items: data[0].items.map(it => ({
+          order_no: it.order_no,
+          proc_code: it.proc_code,
+          qty: it.qty,
+          rqty: it.rqty || 0
+        }))
+      };
     }
   } catch (e) {}
   return { found: false };
@@ -338,7 +342,11 @@ function addRow(preset) {
       if (preset.proc_code) {
         procSel.classList.remove("placeholder-opt");
         applyProc(el);
-        if (preset.qty != null) { $(".js-qty", el).value = preset.qty; validateRow(el); recalc(); }
+        if (preset.qty != null) {
+          $(".js-qty", el).value = preset.qty;
+          if (preset.rqty != null && preset.rqty > 0) $(".js-rqty", el).value = preset.rqty;
+          validateRow(el); recalc();
+        }
       }
     });
   }

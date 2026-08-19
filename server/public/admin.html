@@ -484,8 +484,13 @@ function exportData() {
 }
 
 /* 统计数据 */
+function localDateStr(d) {
+  const pad = (n) => (n < 10 ? '0' + n : '' + n);
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
+
 async function loadStats() {
-  const res = await API.get('/admin/stats');
+  const res = await API.get('/admin/stats?today=' + localDateStr(new Date()));
   if (!res.ok) return;
   
   const d = res.data;
@@ -798,10 +803,10 @@ async function deleteGroupTarget(grp) {
 
 /* 初始化 */
 (async function init() {
-  // 设置日期范围默认值（本月）
+  // 设置日期范围默认值（本月，按本地时区）
   const now = new Date();
-  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-  const today = now.toISOString().slice(0, 10);
+  const firstDay = localDateStr(new Date(now.getFullYear(), now.getMonth(), 1));
+  const today = localDateStr(now);
   $("#filterStart").value = firstDay;
   $("#filterEnd").value = today;
   $("#groupDate").value = today;
