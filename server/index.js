@@ -135,11 +135,24 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
+let server;
+
 initDatabase()
   .then(() => {
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Server running on port ${PORT}`);
-      console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    server = app.listen(PORT, '0.0.0.0', () => {
+      console.log(`✓ Server running on port ${PORT}`);
+      console.log(`✓ Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`✓ Database: ${DB_PATH}`);
+    });
+    
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error(`✗ 端口 ${PORT} 已被占用`);
+        console.error('尝试关闭现有进程或使用其他端口');
+      } else {
+        console.error('✗ 服务器错误:', err);
+      }
+      process.exit(1);
     });
   })
   .catch((err) => {
@@ -150,8 +163,34 @@ initDatabase()
     process.exit(1);
   });
 
-process.on('SIGINT', () => {
-  console.log('\nClosing...');
-  if (db) db.close();
-  process.exit(0);
-});
+// 优雅关闭
+function gracefulShutdown(signal) {
+  console.log(`\n收到 ${signal} 信号，正在关闭服务器...`);
+  
+  if (server) {
+    server.close(() => {
+      console.log('HTTP 服务器已关闭');
+      if (db) {
+        db.close((err) => {
+          if (err) console.error('关闭数据库时出错:', err);
+          else console.log('数据库连接已关闭');
+          process.exit(0);
+        });
+      } else {
+        process.exit(0);
+      }
+    });
+    
+    // 如果 10 秒后还未关闭，强制退出
+    setTimeout(() => {
+      console.error('无法正常关闭，强制退出');
+      process.exit(1);
+    }, 10000);
+  } else {
+    if (db) db.close();
+    process.exit(0);
+  }
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
