@@ -29,8 +29,8 @@ Page({
     this.setData({ loading: true });
 
     api.get('/reports/history/' + encodeURIComponent(empId) + '?limit=20')
-      .then((data) => {
-        const list = data.map((r) => ({
+      .then((res) => {
+        const list = res.data.map((r) => ({
           ...r,
           subtotalText: util.money(r.subtotal),
           itemsText: r.items.map((i) => i.order_no + ' ' + i.proc_name + ' ×' + i.qty).join('；')

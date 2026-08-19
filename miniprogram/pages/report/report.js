@@ -35,8 +35,8 @@ Page({
   loadOrders() {
     if (this.data.ordersLoading) return;
     this.setData({ ordersLoading: true, ordersError: '' });
-    api.get('/orders').then((data) => {
-      const orders = data.map((o) => ({
+    api.get('/orders').then((res) => {
+      const orders = res.data.map((o) => ({
         ...o,
         label: o.order_no + (o.product ? '（' + o.product + '）' : '')
       }));
@@ -52,9 +52,9 @@ Page({
   loadEmployee(id) {
     if (this.data.empLoading) return;
     this.setData({ empLoading: true, empError: '' });
-    api.get('/employees/' + encodeURIComponent(id)).then((info) => {
+    api.get('/employees/' + encodeURIComponent(id)).then((res) => {
       wx.setStorageSync('emp_id', id);
-      this.setData({ empInfo: info, empError: '', empLoading: false });
+      this.setData({ empInfo: res.data, empError: '', empLoading: false });
     }).catch((err) => {
       this.setData({ empInfo: null, empError: err.message, empLoading: false });
     });
@@ -126,8 +126,8 @@ Page({
     };
     this.setData({ rows: this.updateRow(id, patch) }, () => this.recalc());
 
-    api.get('/orders/' + encodeURIComponent(order.order_no) + '/processes').then((data) => {
-      const processes = data.map((p) => ({
+    api.get('/orders/' + encodeURIComponent(order.order_no) + '/processes').then((res) => {
+      const processes = res.data.map((p) => ({
         ...p,
         label: p.proc_code + ' ' + p.proc_name
       }));
@@ -247,7 +247,8 @@ Page({
   async applyLast(empId) {
     let data;
     try {
-      data = await api.get('/reports/history/' + encodeURIComponent(empId) + '?limit=1');
+      const res = await api.get('/reports/history/' + encodeURIComponent(empId) + '?limit=1');
+      data = res.data;
     } catch (e) {
       this.addRow();
       return;
@@ -264,8 +265,8 @@ Page({
       let procIdx = -1;
       if (orderIdx >= 0) {
         try {
-          const list = await api.get('/orders/' + encodeURIComponent(it.order_no) + '/processes');
-          processes = list.map((p) => ({ ...p, label: p.proc_code + ' ' + p.proc_name }));
+          const res = await api.get('/orders/' + encodeURIComponent(it.order_no) + '/processes');
+          processes = res.data.map((p) => ({ ...p, label: p.proc_code + ' ' + p.proc_name }));
           procIdx = processes.findIndex((p) => p.proc_code === it.proc_code);
         } catch (e) {}
       }
