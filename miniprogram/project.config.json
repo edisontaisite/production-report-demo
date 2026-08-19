@@ -1,7 +1,7 @@
 {
   "description": "员工产量上报小程序",
   "compileType": "miniprogram",
-  "appid": "wxc3592847e0ba1ef5",
+  "appid": "wxe5a27488b457d48c",
   "projectname": "production-report",
   "libVersion": "3.0.0",
   "setting": {
@@ -34,5 +34,6 @@
     "ignore": [],
     "include": []
   },
-  "editorSetting": {}
+  "editorSetting": {},
+  "isGameTourist": false
 }
