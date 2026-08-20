@@ -75,7 +75,7 @@ router.get('/stats', async (req, res) => {
       FROM report_items ri
       LEFT JOIN orders o ON ri.order_no = o.order_no
       LEFT JOIN reports r ON ri.report_id = r.id
-      ${whereClause ? 'WHERE ' + whereClause.replace(/report_date/g, 'r.report_date') : ''}
+      ${whereClause ? whereClause.replace(/\breport_date\b/g, 'r.report_date') : ''}
       GROUP BY ri.order_no
       ORDER BY total_amount DESC
     `, params);
@@ -139,8 +139,15 @@ router.get('/export', async (req, res) => {
     
     const csv = [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n');
     
+    // HTTP 头只允许 ASCII，中文文件名必须按 RFC 5987 编码；
+    // 同时保留一个纯 ASCII 的 filename 作为老浏览器兜底。
+    const fileName = `产量报表_${start_date || '全量'}_${end_date || '至今'}.csv`;
+    const asciiName = `report_${start_date || 'all'}_${end_date || 'now'}.csv`;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="产量报表_${start_date || '全量'}_${end_date || '至今'}.csv"`);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`
+    );
     res.send('\ufeff' + csv);
   } catch (err) {
     console.error('导出失败:', err);

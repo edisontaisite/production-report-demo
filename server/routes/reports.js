@@ -4,7 +4,13 @@ const router = express.Router();
 router.post('/', async (req, res) => {
   const db = req.app.locals.db;
   const { emp_id, report_date, items } = req.body;
-  
+
+  // 幂等键：同一次提交在网络超时后重试时复用，避免重复入账。
+  // 老客户端不带这个字段时退化成原来的行为（不去重）。
+  const clientToken = typeof req.body.client_token === 'string' && req.body.client_token.trim()
+    ? req.body.client_token.trim().slice(0, 64)
+    : null;
+
   if (!emp_id) return res.status(400).json({ ok: false, error: '员工编号不能为空' });
   if (!report_date) return res.status(400).json({ ok: false, error: '上报日期不能为空' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(report_date)) return res.status(400).json({ ok: false, error: '上报日期格式不正确' });
@@ -14,6 +20,25 @@ router.post('/', async (req, res) => {
   
   try {
     const result = await db.runTransaction(async ({ run, all }) => {
+      // 幂等：这个 token 已经提交过就直接返回上次的结果，不再重复扣减和入账
+      if (clientToken) {
+        const prev = await all(
+          'SELECT id, subtotal FROM reports WHERE client_token = ?', [clientToken]
+        );
+        if (prev.length > 0) {
+          const prevItems = await all(
+            'SELECT order_no, proc_code, proc_name, qty, rqty, unit_price, amount FROM report_items WHERE report_id = ?',
+            [prev[0].id]
+          );
+          return {
+            reportId: prev[0].id,
+            subtotal: prev[0].subtotal,
+            resolvedItems: prevItems,
+            duplicate: true
+          };
+        }
+      }
+
       const employees = await all('SELECT * FROM employees WHERE id = ?', [emp_id]);
       if (employees.length === 0) {
         throw new Error('员工编号不存在');
@@ -75,15 +100,15 @@ router.post('/', async (req, res) => {
           rqty: agg.rqty,
           unit_price: process.unit_price,
           amount: amount,
-          new_remaining: Math.round((process.remaining - agg.qty) * 100) / 100
+          remaining_before: process.remaining
         });
       }
-      
+
       subtotal = Math.round(subtotal * 100) / 100;
-      
+
       const reportRes = await run(
-        'INSERT INTO reports (emp_id, report_date, subtotal) VALUES (?, ?, ?)',
-        [emp_id, report_date, subtotal]
+        'INSERT INTO reports (emp_id, report_date, subtotal, client_token) VALUES (?, ?, ?, ?)',
+        [emp_id, report_date, subtotal, clientToken]
       );
       const reportId = reportRes.lastID;
       
@@ -94,22 +119,36 @@ router.post('/', async (req, res) => {
         );
       }
       
+      // 条件原子扣减：把「校验够不够」和「扣掉」合成一条语句。
+      // 之前是先读出 remaining、再写回一个算好的绝对值，读写之间隔着多个 await，
+      // 并发时两个请求会读到同一个旧值、各自写回，产量被少扣、工价被多发。
       for (const item of resolvedItems) {
-        await run(
-          'UPDATE processes SET remaining = ? WHERE order_no = ? AND proc_code = ?',
-          [item.new_remaining, item.order_no, item.proc_code]
+        const upd = await run(
+          `UPDATE processes SET remaining = ROUND(remaining - ?, 2)
+           WHERE order_no = ? AND proc_code = ? AND remaining >= ?`,
+          [item.qty, item.order_no, item.proc_code, item.qty]
         );
+        if (upd.changes !== 1) {
+          throw new Error(
+            `工序 ${item.proc_code}：合计产量 ${item.qty} 超过剩余产量 ${item.remaining_before}`
+          );
+        }
       }
-      
+
       return { reportId, subtotal, resolvedItems };
     });
     
-    console.log(`员工 ${emp_id} 提交上报 #${result.reportId}，工价合计 ¥${result.subtotal}`);
-    res.json({ 
-      ok: true, 
-      report_id: result.reportId, 
+    if (result.duplicate) {
+      console.log(`员工 ${emp_id} 重复提交被幂等拦截，返回已有上报 #${result.reportId}`);
+    } else {
+      console.log(`员工 ${emp_id} 提交上报 #${result.reportId}，工价合计 ¥${result.subtotal}`);
+    }
+    res.json({
+      ok: true,
+      report_id: result.reportId,
       subtotal: result.subtotal,
-      items: result.resolvedItems.map(({ new_remaining, ...rest }) => rest)
+      duplicate: !!result.duplicate,
+      items: result.resolvedItems.map(({ remaining_before, ...rest }) => rest)
     });
   } catch (err) {
     console.error('提交上报失败:', err);

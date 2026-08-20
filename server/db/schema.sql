@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS reports (
   emp_id TEXT NOT NULL,         -- 员工工号
   report_date DATE NOT NULL,    -- 上报日期
   subtotal REAL NOT NULL,       -- 工价小计
+  client_token TEXT,            -- 幂等键：同一次提交重试时复用，避免重复入账
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (emp_id) REFERENCES employees(id)
 );
@@ -71,6 +72,9 @@ CREATE TABLE IF NOT EXISTS group_headcount (
 );
 
 -- 创建索引
+-- 幂等键唯一索引：只约束非空值，老记录（client_token 为 NULL）不受影响
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_token
+  ON reports(client_token) WHERE client_token IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_reports_emp ON reports(emp_id);
 CREATE INDEX IF NOT EXISTS idx_reports_date ON reports(report_date);
 CREATE INDEX IF NOT EXISTS idx_report_items_report ON report_items(report_id);

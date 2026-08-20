@@ -24,10 +24,6 @@
   .topbar .close{font-size:22px; color:#444; width:28px;}
   .topbar .title{flex:1; text-align:center; font-size:17px; font-weight:600;}
   .topbar .more{width:28px; text-align:right; color:#444; font-size:20px; cursor:pointer;}
-  .topbar .admin-link{font-size:12px; color:var(--blue); text-decoration:none;
-    padding:3px 9px; border:1px solid var(--blue); border-radius:12px;
-    margin-right:14px; background:var(--card); white-space:nowrap;}
-  .topbar .admin-link:active{opacity:.7;}
   .topbar .url{text-align:center; font-size:11px; color:var(--muted);
     padding-bottom:5px; margin-top:-4px;}
   .accent{height:3px; background:var(--green);}
@@ -106,7 +102,7 @@
     <div class="row">
       <div class="close">✕</div>
       <div class="title">员工产量上报</div>
-      <a class="admin-link" href="admin.html">后台</a>
+      <div class="more"></div>
     </div>
     <div class="url">产量上报系统</div>
     <div class="accent"></div>
@@ -208,12 +204,25 @@ async function initData() {
 async function getProcesses(orderNo) {
   return await api.get('/orders/' + encodeURIComponent(orderNo) + '/processes');
 }
+// 幂等键：一次提交（含失败后的重试）复用同一个 token，服务端据此去重。
+// 明细一旦被改动就作废重发，避免把「新的一笔」错认成重复提交。
+let pendingToken = null;
+function ensureToken() {
+  if (!pendingToken) {
+    pendingToken = (window.crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : 'r-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+  }
+  return pendingToken;
+}
+
 async function submitReport(payload) {
-  // 返回 {ok, report_id, subtotal, items}
+  // 返回 {ok, report_id, subtotal, duplicate, items}
   return await api.post('/reports', {
     emp_id: payload.emp_id,
     report_date: payload.report_date,
-    items: payload.items
+    items: payload.items,
+    client_token: ensureToken()
   });
 }
 async function getLast(emp_id) {
@@ -433,8 +442,17 @@ $("#addTop").onclick = () => addRow();
 $("#empNameInput").addEventListener("change", loadEmployee);
 $("#empNameInput").addEventListener("blur", loadEmployee);
 
+// 明细有任何改动就作废幂等键：这是「新的一笔」，不是上一笔的重试
+$("#details").addEventListener("input", () => { pendingToken = null; });
+$("#details").addEventListener("change", () => { pendingToken = null; });
+
 $("#submitBtn").onclick = async () => {
   if (!currentEmployee) return toast("请先输入姓名并确认员工信息");
+  // 姓名查询是异步的：改了名字直接点提交时 currentEmployee 可能还是上一个人，
+  // 不比对就会把产量记到别人工号上
+  if (currentEmployee.name !== $("#empNameInput").value.trim()) {
+    return toast("姓名已改动，请点一下别处确认员工信息后再提交");
+  }
   const items = [];
   for (const el of $("#details").children) {
     const orderNo = $(".js-order", el).value, procCode = $(".js-proc", el).value;
@@ -452,11 +470,19 @@ $("#submitBtn").onclick = async () => {
   const btn = $("#submitBtn"); btn.disabled = true;
   try {
     const res = await submitReport({emp_id:empId, report_date:$("#reportDate").value, items});
-    toast(`提交成功 ✓  工价小计 ¥${money(res.subtotal)}`, 2600);
+    pendingToken = null;   // 这一笔已入账，下次提交是新的一笔
+    toast(res.duplicate
+      ? `这一笔之前已经交过了，没有重复记账（工价 ¥${money(res.subtotal)}）`
+      : `提交成功 ✓  工价小计 ¥${money(res.subtotal)}`, 2600);
     $("#details").innerHTML=""; rows.clear(); seq=0; recalc();
     if ($("#saveAutofill").checked) {
       const last = await getLast(empId);
-      if (last.found) { last.items.forEach(it => addRow(it)); return; }
+      // 只带回订单和工序，不回填产量数字 —— 回填数字会让误触一次就变成一份重复工钱
+      if (last.found) {
+        last.items.forEach(it => addRow({ order_no: it.order_no, proc_code: it.proc_code }));
+        pendingToken = null;
+        return;
+      }
     }
     addRow();
   } catch (e) {

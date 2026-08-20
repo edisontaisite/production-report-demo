@@ -165,8 +165,18 @@ Page({
     });
   },
 
+  // 幂等键：一次提交（含失败后重试）复用同一个 token，服务端据此去重；
+  // 明细一改就作废，避免把「新的一笔」错认成重复提交。
+  ensureToken() {
+    if (!this.pendingToken) {
+      this.pendingToken = 'r-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+    }
+    return this.pendingToken;
+  },
+
   onQtyInput(e) {
     const id = e.currentTarget.dataset.id;
+    this.pendingToken = null;
     this.setData({ rows: this.updateRow(id, { qty: e.detail.value }) }, () => {
       this.recalc();
       this.validateAll();
@@ -175,6 +185,7 @@ Page({
 
   onRqtyInput(e) {
     const id = e.currentTarget.dataset.id;
+    this.pendingToken = null;
     this.setData({ rows: this.updateRow(id, { rqty: e.detail.value }) });
   },
 
@@ -232,6 +243,11 @@ Page({
     if (submitting) return;
     if (!empName.trim()) return wx.showToast({ title: '请输入员工姓名', icon: 'none' });
     if (!empInfo) return wx.showToast({ title: '请先确认员工信息', icon: 'none' });
+    // 姓名查询是异步的：改完名字直接点提交时 empInfo 可能还是上一个人，
+    // 不比对就会把产量记到别人工号上
+    if (empInfo.name !== empName.trim()) {
+      return wx.showToast({ title: '姓名已改动，请等员工信息刷新后再提交', icon: 'none', duration: 2600 });
+    }
 
     const items = [];
     for (let i = 0; i < rows.length; i++) {
@@ -263,8 +279,18 @@ Page({
     const empId = empInfo.id;
     this.setData({ submitting: true });
     try {
-      const res = await api.post('/reports', { emp_id: empId, report_date: date, items });
-      wx.showToast({ title: '提交成功，工价 ¥' + util.money(res.subtotal), icon: 'success', duration: 2000 });
+      const res = await api.post('/reports', {
+        emp_id: empId, report_date: date, items, client_token: this.ensureToken()
+      });
+      this.pendingToken = null;   // 这一笔已入账，下次提交是新的一笔
+      // icon:'success' 只能显示 7 个汉字，金额会被截掉，这里用 icon:'none'
+      wx.showToast({
+        title: res.duplicate
+          ? '这一笔之前已交过，未重复记账'
+          : '提交成功，工价 ¥' + util.money(res.subtotal),
+        icon: 'none',
+        duration: 2600
+      });
       this.setData({ rows: [] }, () => {
         this.recalc();
         if (saveAutofill) this.applyLast(empId);
@@ -315,8 +341,10 @@ Page({
         procLabel: procIdx >= 0 ? processes[procIdx].label : '',
         unitPrice: procIdx >= 0 ? processes[procIdx].unit_price : 0,
         remaining: procIdx >= 0 ? processes[procIdx].remaining : 0,
-        qty: String(it.qty),
-        rqty: it.rqty ? String(it.rqty) : '',
+        // 只带回订单和工序，不回填产量数字 ——
+        // 回填数字会让工人误触一次就变成一份重复工钱
+        qty: '',
+        rqty: '',
         qtyErr: ''
       });
     }
