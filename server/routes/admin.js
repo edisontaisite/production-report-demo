@@ -1,5 +1,27 @@
 const express = require('express');
 const router = express.Router();
+const auth = require('../auth');
+
+// 登录守卫：除 login / logout / session 外，/api/admin/* 全部需要登录
+router.use(auth.requireAuth);
+
+router.post('/login', (req, res) => {
+  const { password } = req.body || {};
+  if (!auth.checkPassword(password)) {
+    return res.status(401).json({ ok: false, error: '口令不正确' });
+  }
+  auth.setSessionCookie(res, auth.issueToken());
+  res.json({ ok: true, message: '登录成功' });
+});
+
+router.post('/logout', (req, res) => {
+  auth.clearSessionCookie(res);
+  res.json({ ok: true, message: '已退出' });
+});
+
+router.get('/session', (req, res) => {
+  res.json({ ok: true, authed: auth.isAuthed(req) });
+});
 
 router.get('/reports', async (req, res) => {
   const db = req.app.locals.db;

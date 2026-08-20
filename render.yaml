@@ -10,6 +10,10 @@ services:
         value: production
       - key: DB_PATH
         value: /data/production.db
+      # 管理后台口令：在 Render 控制台的 Environment 里填写，不要写进代码库。
+      # 留空的话服务每次启动会随机生成一个并打印到日志，重启后失效。
+      - key: ADMIN_PASSWORD
+        sync: false
     # 数据持久化：挂载 SSD 到 /data，SQLite 数据在重启/重新部署后不丢失
     disk:
       name: data

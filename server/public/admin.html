@@ -9,6 +9,25 @@
   body{margin:0; font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
     background:#f5f6fa; color:#333; font-size:14px;}
   
+  /* 登录遮罩 */
+  .login-mask{position:fixed; inset:0; z-index:100; background:#f5f6fa;
+    display:none; align-items:center; justify-content:center; padding:20px;}
+  .login-mask.show{display:flex;}
+  .login-box{background:#fff; border:1px solid #e8e8e8; border-radius:10px;
+    padding:32px 28px; width:100%; max-width:340px; text-align:center;
+    box-shadow:0 4px 24px rgba(0,0,0,.06);}
+  .login-logo{font-size:34px; line-height:1; margin-bottom:12px;}
+  .login-title{font-size:18px; font-weight:700; margin-bottom:6px;}
+  .login-sub{font-size:13px; color:#8a94a6; margin-bottom:20px;}
+  .login-input{width:100%; height:42px; padding:0 12px; font-size:15px;
+    border:1px solid #dcdfe6; border-radius:6px; outline:none; font-family:inherit;}
+  .login-input:focus{border-color:#12b886;}
+  .login-err{min-height:18px; font-size:13px; color:#e03131; margin:8px 0 4px;}
+  .login-btn{width:100%; height:42px; font-size:15px; font-weight:600; color:#fff;
+    background:#12b886; border:none; border-radius:6px; cursor:pointer; font-family:inherit;}
+  .login-btn:hover{background:#0ca678;}
+  .login-btn:disabled{background:#a9d9c7; cursor:default;}
+
   .header{background:#fff; padding:16px 24px; border-bottom:1px solid #e8e8e8; display:flex; align-items:center; justify-content:space-between;}
   .header h1{font-size:18px; margin:0; display:flex; align-items:center; gap:8px;}
   .header .logo{width:32px; height:32px; background:linear-gradient(135deg,#12b886,#0ca678); border-radius:6px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:16px;}
@@ -150,6 +169,19 @@
 </style>
 </head>
 <body>
+<!-- 登录遮罩：未登录或登录过期时覆盖整个后台 -->
+<div class="login-mask" id="loginMask">
+  <form class="login-box" id="loginForm">
+    <div class="login-logo">📊</div>
+    <div class="login-title">产量上报管理后台</div>
+    <div class="login-sub">请输入管理口令</div>
+    <input class="login-input" id="loginPwd" type="password" placeholder="管理口令"
+      autocomplete="current-password" required>
+    <div class="login-err" id="loginErr"></div>
+    <button class="login-btn" type="submit" id="loginBtn">登录</button>
+  </form>
+</div>
+
 <div class="header">
   <h1>
     <div class="logo">📊</div>
@@ -157,6 +189,7 @@
   </h1>
   <div class="header-actions">
     <button class="btn-secondary" onclick="location.href='index.html'">← 员工端</button>
+    <button class="btn-secondary" onclick="logout()">退出登录</button>
   </div>
 </div>
 
@@ -409,38 +442,77 @@
 <script>
 const $ = (s, r=document) => r.querySelector(s);
 const money = n => (n || 0).toFixed(2);
+// HTML 转义：所有拼进 innerHTML 的用户数据都必须过这一层
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const toast = (msg) => {
   const t = $("#toast"); t.textContent = msg; t.classList.add("show");
   setTimeout(()=>t.classList.remove("show"), 2000);
 };
 
-/* API */
+/* 登录 */
+function showLogin(msg) {
+  $("#loginErr").textContent = msg || '';
+  $("#loginMask").classList.add('show');
+  $("#loginPwd").focus();
+}
+function hideLogin() {
+  $("#loginMask").classList.remove('show');
+  $("#loginPwd").value = '';
+  $("#loginErr").textContent = '';
+}
+
+/* API：任何接口返回 401 就弹登录框，避免页面变成一堆「暂无数据」 */
+async function request(method, path, data) {
+  const opts = { method };
+  if (data !== undefined) {
+    opts.headers = { 'Content-Type': 'application/json' };
+    opts.body = JSON.stringify(data);
+  }
+  let res;
+  try {
+    res = await fetch('/api' + path, opts);
+  } catch (e) {
+    return { ok: false, error: '网络错误，请检查连接后重试' };
+  }
+  // 登录接口自己的 401 是「口令不对」，要让调用方拿到原始错误，不能在这里拦
+  if (res.status === 401 && path !== '/admin/login') {
+    showLogin('登录已过期，请重新登录');
+    return { ok: false, error: '未登录', unauthorized: true };
+  }
+  try {
+    return await res.json();
+  } catch (e) {
+    return { ok: false, error: '服务器返回异常（HTTP ' + res.status + '）' };
+  }
+}
+
 const API = {
-  async get(path) {
-    const res = await fetch('/api' + path);
-    return res.json();
-  },
-  async post(path, data) {
-    const res = await fetch('/api' + path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-    return res.json();
-  },
-  async put(path, data) {
-    const res = await fetch('/api' + path, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-    return res.json();
-  },
-  async del(path) {
-    const res = await fetch('/api' + path, { method: 'DELETE' });
-    return res.json();
+  get:  (path)       => request('GET', path),
+  post: (path, data) => request('POST', path, data === undefined ? {} : data),
+  put:  (path, data) => request('PUT', path, data === undefined ? {} : data),
+  del:  (path)       => request('DELETE', path)
+};
+
+$("#loginForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const btn = $("#loginBtn");
+  btn.disabled = true;
+  $("#loginErr").textContent = '';
+  const res = await request('POST', '/admin/login', { password: $("#loginPwd").value });
+  btn.disabled = false;
+  if (res.ok) {
+    hideLogin();
+    loadReports(0);
+  } else {
+    $("#loginErr").textContent = res.error || '登录失败';
+    $("#loginPwd").select();
   }
 };
+
+async function logout() {
+  await request('POST', '/admin/logout', {});
+  showLogin('已退出登录');
+}
 
 /* 标签页切换 */
 document.querySelectorAll('.nav-item').forEach(item => {
@@ -486,10 +558,10 @@ async function loadReports(page) {
   tbody.innerHTML = res.data.map(r => `
     <tr>
       <td>${r.report_date}</td>
-      <td>${r.emp_id}</td>
-      <td>${r.emp_name || '-'}</td>
-      <td>${r.factory || ''} / ${r.grp || ''}</td>
-      <td>${r.items.map(i => `<div style="font-size:12px">${i.order_no} ${i.proc_name} × ${i.qty} <span class="amount">¥${money(i.amount)}</span></div>`).join('')}</td>
+      <td>${esc(r.emp_id)}</td>
+      <td>${esc(r.emp_name || '-')}</td>
+      <td>${esc(r.factory || '')} / ${esc(r.grp || '')}</td>
+      <td>${r.items.map(i => `<div style="font-size:12px">${esc(i.order_no)} ${esc(i.proc_name)} × ${esc(i.qty)} <span class="amount">¥${money(i.amount)}</span></div>`).join('')}</td>
       <td class="amount">¥${money(r.subtotal)}</td>
       <td><button class="btn-secondary" style="height:28px;font-size:12px;padding:0 8px" onclick="viewReport(${r.id})">查看</button></td>
     </tr>
@@ -509,7 +581,6 @@ async function loadReports(page) {
 }
 
 /* 上报详情弹窗 */
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 async function viewReport(id) {
   const overlay = $("#reportModal");
@@ -599,8 +670,8 @@ async function loadStats() {
   if (d.by_order && d.by_order.length) {
     orderStats.innerHTML = d.by_order.map(o => `
       <tr>
-        <td>${o.order_no}</td>
-        <td>${o.product || '-'}</td>
+        <td>${esc(o.order_no)}</td>
+        <td>${esc(o.product || '-')}</td>
         <td>${o.total_qty}</td>
         <td class="amount">¥${money(o.total_amount)}</td>
         <td>${o.report_count}</td>
@@ -615,9 +686,9 @@ async function loadStats() {
   if (d.by_employee && d.by_employee.length) {
     empStats.innerHTML = d.by_employee.map(e => `
       <tr>
-        <td>${e.emp_id}</td>
-        <td>${e.name}</td>
-        <td>${e.factory} / ${e.grp}</td>
+        <td>${esc(e.emp_id)}</td>
+        <td>${esc(e.name)}</td>
+        <td>${esc(e.factory)} / ${esc(e.grp)}</td>
         <td>${e.report_count}</td>
         <td class="amount">¥${money(e.total_amount)}</td>
       </tr>
@@ -638,40 +709,56 @@ async function loadEmployees() {
   }
   
   list.innerHTML = res.data.map(e => `
-    <div class="employee-card" id="emp-card-${e.id}">
+    <div class="employee-card" data-emp="${esc(e.id)}">
       <div class="info">
-        <div class="name">${e.name}</div>
-        <div class="meta">${e.factory} · ${e.grp}</div>
+        <div class="name">${esc(e.name)}</div>
+        <div class="meta">${esc(e.factory)} · ${esc(e.grp)}</div>
       </div>
       <div class="ops">
-        <button class="btn-mini" onclick="editEmployee('${e.id}')">编辑</button>
-        <button class="btn-mini danger" onclick="deleteEmployee('${e.id}')">删除</button>
+        <button class="btn-mini js-emp-edit" data-emp="${esc(e.id)}">编辑</button>
+        <button class="btn-mini danger js-emp-del" data-emp="${esc(e.id)}">删除</button>
       </div>
     </div>
   `).join('');
 }
 
+// 工号是自由文本，不能拼进 onclick 的 JS 字符串里（HTML 转义挡不住这类注入），
+// 统一改成 data-* 属性 + 事件委托
+const empCard = (id) => document.querySelector('.employee-card[data-emp="' + CSS.escape(id) + '"]');
+
+document.addEventListener('click', (ev) => {
+  const edit = ev.target.closest('.js-emp-edit');
+  if (edit) return editEmployee(edit.dataset.emp);
+  const del = ev.target.closest('.js-emp-del');
+  if (del) return deleteEmployee(del.dataset.emp);
+  const save = ev.target.closest('.js-emp-save');
+  if (save) return saveEmployee(save.dataset.emp);
+  if (ev.target.closest('.js-emp-cancel')) return loadEmployees();
+  const gdel = ev.target.closest('.js-grp-del');
+  if (gdel) return deleteGroupTarget(gdel.dataset.grp);
+});
+
 function editEmployee(id) {
-  const card = $("#emp-card-" + id);
+  const card = empCard(id);
   if (!card) return;
   const name = card.querySelector('.name').textContent.trim();
   const metaParts = card.querySelector('.meta').textContent.split('·').map(s => s.trim());
-  
+
   card.innerHTML = `
     <div class="edit-form">
-      <input class="edit-name" placeholder="姓名" value="${name}">
-      <input class="edit-factory" placeholder="工厂" value="${metaParts[0] || ''}">
-      <input class="edit-grp" placeholder="组别" value="${metaParts[1] || ''}">
+      <input class="edit-name" placeholder="姓名" value="${esc(name)}">
+      <input class="edit-factory" placeholder="工厂" value="${esc(metaParts[0] || '')}">
+      <input class="edit-grp" placeholder="组别" value="${esc(metaParts[1] || '')}">
     </div>
     <div class="ops">
-      <button class="btn-mini primary" onclick="saveEmployee('${id}')">保存</button>
-      <button class="btn-mini" onclick="loadEmployees()">取消</button>
+      <button class="btn-mini primary js-emp-save" data-emp="${esc(id)}">保存</button>
+      <button class="btn-mini js-emp-cancel">取消</button>
     </div>
   `;
 }
 
 async function saveEmployee(id) {
-  const card = $("#emp-card-" + id);
+  const card = empCard(id);
   if (!card) return;
   const name = card.querySelector('.edit-name').value.trim();
   const factory = card.querySelector('.edit-factory').value.trim();
@@ -793,21 +880,21 @@ async function loadOrders() {
   // 需要获取每个订单的工序
   let html = '';
   for (const order of res.data) {
-    const procRes = await API.get(`/orders/${order.order_no}/processes`);
+    const procRes = await API.get('/orders/' + encodeURIComponent(order.order_no) + '/processes');
     html += `
       <div class="order-card">
         <div class="header">
-          <span class="order-no">${order.order_no}</span>
-          <span style="color:#888;font-size:12px">${order.style_no || ''}</span>
+          <span class="order-no">${esc(order.order_no)}</span>
+          <span style="color:#888;font-size:12px">${esc(order.style_no || '')}</span>
         </div>
-        <div class="product">${order.product || '-'}</div>
+        <div class="product">${esc(order.product || '-')}</div>
         <div class="stats">
           <span>工序: ${order.proc_count}</span>
           <span>剩余总量: ${order.total_remaining || 0}</span>
         </div>
         <div class="process-list">
           ${procRes.ok ? procRes.data.map(p => `
-            <span class="process-tag">${p.proc_code} ${p.proc_name} ¥${p.unit_price} (剩${p.remaining})</span>
+            <span class="process-tag">${esc(p.proc_code)} ${esc(p.proc_name)} ¥${esc(p.unit_price)} (剩${esc(p.remaining)})</span>
           `).join('') : ''}
         </div>
       </div>
@@ -878,11 +965,11 @@ async function loadGroupTargets() {
   list.innerHTML = res.data.map(t => `
     <div class="employee-card">
       <div class="info">
-        <div class="name">${t.grp}</div>
+        <div class="name">${esc(t.grp)}</div>
         <div class="meta">目标人均产量 ${t.target_per_person} 件/人/天 · 标准DCT ${t.std_dct}</div>
       </div>
       <div class="ops">
-        <button class="btn-mini danger" onclick="deleteGroupTarget('${t.grp}')">删除</button>
+        <button class="btn-mini danger js-grp-del" data-grp="${esc(t.grp)}">删除</button>
       </div>
     </div>
   `).join('');
@@ -931,9 +1018,13 @@ async function deleteGroupTarget(grp) {
   $("#filterStart").value = firstDay;
   $("#filterEnd").value = today;
   $("#groupDate").value = today;
-  
-  loadReports(0);
+
   addProcRow(); // 订单管理默认一行工序输入
+
+  // 先确认登录状态：没登录就只弹登录框，不去打一堆注定 401 的请求
+  const s = await request('GET', '/admin/session');
+  if (s.ok && s.authed) loadReports(0);
+  else showLogin();
 })();
 </script>
 </body>
