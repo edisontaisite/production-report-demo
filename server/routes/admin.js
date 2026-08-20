@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../auth');
+const backup = require('../backup');
+const fs = require('fs');
 
 // CSV 单元格转义。除了引号和换行，还要挡住 Excel 公式注入：
 // 以 = + - @ 开头的内容会被 Excel 当公式执行，前面补一个单引号。
@@ -653,6 +655,43 @@ router.get('/payroll/export', async (req, res) => {
     console.error('导出月度工资表失败:', err);
     res.status(500).json({ ok: false, error: '服务器错误' });
   }
+});
+
+// 数据库备份
+router.get('/backups', (req, res) => {
+  try {
+    res.json({ ok: true, data: backup.list(), keep: backup.KEEP });
+  } catch (err) {
+    console.error('获取备份列表失败:', err);
+    res.status(500).json({ ok: false, error: '服务器错误' });
+  }
+});
+
+router.post('/backups', async (req, res) => {
+  try {
+    const info = await backup.run(req.app.locals.db.runExclusive);
+    res.json({ ok: true, message: `已生成备份 ${info.name}`, data: info });
+  } catch (err) {
+    console.error('手动备份失败:', err);
+    res.status(500).json({ ok: false, error: err.message || '备份失败' });
+  }
+});
+
+// 下载备份 —— 这是目前唯一的异地留存手段，磁盘整块丢失时只有下载走的副本能救
+router.get('/backups/:name', (req, res) => {
+  const full = backup.resolveBackup(req.params.name);
+  if (!full) {
+    return res.status(400).json({ ok: false, error: '备份文件名不合法' });
+  }
+  if (!fs.existsSync(full)) {
+    return res.status(404).json({ ok: false, error: '备份文件不存在' });
+  }
+  res.download(full, req.params.name, (err) => {
+    if (err && !res.headersSent) {
+      console.error('下载备份失败:', err);
+      res.status(500).json({ ok: false, error: '下载失败' });
+    }
+  });
 });
 
 // 组别目标配置

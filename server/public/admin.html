@@ -75,6 +75,12 @@
   .badge{display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px;}
   .badge-green{background:#e6f7f2; color:#0ca678;}
   .badge-void{background:#fdecec; color:#c92a2a;}
+  .backup-note{background:#f8f9fb; border:1px solid #eceff3; border-radius:8px;
+    padding:14px 16px; margin-bottom:16px; font-size:13px; line-height:1.7; color:#555;}
+  .backup-note p{margin:0 0 6px;}
+  .backup-note p:last-child{margin-bottom:0;}
+  .backup-note code{background:#eceff3; padding:1px 5px; border-radius:3px; font-size:12px;}
+  .backup-note .warn{color:#b4501a;}
   .voided-row{opacity:.55;}
   .voided-row .amount{text-decoration:line-through;}
 
@@ -127,6 +133,7 @@
   .employee-card .info .name{font-weight:500; margin-bottom:4px;}
   .employee-card .info .meta{font-size:12px; color:#888;}
   .employee-card .ops{display:flex; gap:6px; align-items:center; flex-shrink:0;}
+  a.btn-mini{display:inline-flex; align-items:center; text-decoration:none;}
   .btn-mini{height:28px; padding:0 12px; border:1px solid #ddd; border-radius:6px; background:#fff; color:#666; font-size:12px; cursor:pointer; font-family:inherit;}
   .btn-mini:hover{border-color:#12b886; color:#12b886;}
   .btn-mini.danger:hover{border-color:#e5484d; color:#e5484d;}
@@ -210,6 +217,7 @@
   <div class="nav-item" data-tab="orders">订单管理</div>
   <div class="nav-item" data-tab="group">组别日报</div>
   <div class="nav-item" data-tab="payroll">月度工资</div>
+  <div class="nav-item" data-tab="backup">数据备份</div>
 </div>
 
 <div class="container">
@@ -429,6 +437,30 @@
     </div>
   </div>
 
+
+  <!-- 数据备份 -->
+  <div class="tab-content" id="tab-backup">
+    <div class="card">
+      <div class="card-header">
+        <h2>数据库备份</h2>
+        <button class="btn-primary" onclick="createBackup()" id="backupBtn">立即备份</button>
+      </div>
+      <div class="card-body">
+        <div class="backup-note">
+          <p><b>自动备份</b>：服务启动后先备一份，之后每 24 小时一份，自动保留最近 <span id="backupKeep">14</span> 份。</p>
+          <p><b>备份位置</b>：和数据库同一块持久化磁盘（<code>/data/backups/</code>），能扛住重启和重新部署。</p>
+          <p class="warn"><b>⚠ 但挡不住整块磁盘丢失。</b>工资数据目前只存在这一块盘上。建议定期点「下载」把备份取到本地或公司网盘，这是目前唯一的异地留存手段。</p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>备份文件</th><th>生成时间</th><th>大小</th><th>操作</th></tr></thead>
+            <tbody id="backupBody"><tr><td colspan="4" class="empty">加载中...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="tab-content" id="tab-group">
     <div class="card">
       <div class="card-header">
@@ -584,6 +616,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     if (item.dataset.tab === 'orders') loadOrders();
     if (item.dataset.tab === 'group') { loadGroupTargets(); loadGroupReport(); }
     if (item.dataset.tab === 'payroll') loadPayroll();
+    if (item.dataset.tab === 'backup') loadBackups();
   };
 });
 
@@ -772,6 +805,50 @@ async function editProcess(d) {
   } else if (!res.unauthorized) {
     toast(res.error || '修改失败');
   }
+}
+
+/* 数据备份 */
+function fmtSize(n) {
+  return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1024).toFixed(1) + ' KB';
+}
+function fmtTime(iso) {
+  const d = new Date(iso);
+  const p = (x) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+async function loadBackups() {
+  const tbody = $("#backupBody");
+  const res = await API.get('/admin/backups');
+  if (!res.ok) {
+    if (!res.unauthorized) tbody.innerHTML = `<tr><td colspan="4" class="empty">${esc(res.error || '加载失败')}</td></tr>`;
+    return;
+  }
+  $("#backupKeep").textContent = res.keep;
+  if (!res.data.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">还没有备份，点右上角「立即备份」生成一份</td></tr>';
+    return;
+  }
+  tbody.innerHTML = res.data.map(b => `
+    <tr>
+      <td>${esc(b.name)}</td>
+      <td>${esc(fmtTime(b.created_at))}</td>
+      <td>${esc(fmtSize(b.size))}</td>
+      <td><a class="btn-mini" href="/api/admin/backups/${encodeURIComponent(b.name)}">下载</a></td>
+    </tr>
+  `).join('');
+}
+
+async function createBackup() {
+  const btn = $("#backupBtn");
+  btn.disabled = true;
+  const prev = btn.textContent;
+  btn.textContent = '备份中...';
+  const res = await API.post('/admin/backups');
+  btn.disabled = false;
+  btn.textContent = prev;
+  if (res.ok) { toast(res.message || '备份完成'); loadBackups(); }
+  else if (!res.unauthorized) toast(res.error || '备份失败');
 }
 
 /* 月度工资表 */

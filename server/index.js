@@ -3,6 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
 const fs = require('fs');
+const backup = require('./backup');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -213,6 +214,19 @@ function runTransaction(callback) {
   return result;
 }
 
+// 独占执行：排进同一条队列，但不开事务。
+// 备份用的 VACUUM INTO 不允许在事务内执行，又必须和写事务错开，只能走这里。
+function runExclusive(sql, params = []) {
+  const result = txQueue.then(() => new Promise((resolve, reject) => {
+    db.run(sql, params, function(err) {
+      if (err) reject(err);
+      else resolve({ lastID: this.lastID, changes: this.changes });
+    });
+  }));
+  txQueue = result.catch(() => {});
+  return result;
+}
+
 function execTransaction(callback) {
   return new Promise((resolve, reject) => {
     // BEGIN IMMEDIATE 立刻拿写锁，避免事务中途才升级锁而撞上 SQLITE_BUSY
@@ -247,7 +261,7 @@ function execTransaction(callback) {
   });
 }
 
-app.locals.db = { runQuery, runInsert, runTransaction, db: () => db };
+app.locals.db = { runQuery, runInsert, runTransaction, runExclusive, db: () => db };
 
 app.use(cors());
 app.use(express.json());
@@ -275,6 +289,14 @@ initDatabase()
       console.log(`✓ Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`✓ Database: ${DB_PATH}`);
       require('./auth').printStartupNotice();
+
+      // 自动备份：启动后先备一份，之后每 24 小时一份
+      try {
+        backup.init(DB_PATH);
+        backup.schedule(runExclusive);
+      } catch (e) {
+        console.error('备份初始化失败（不影响服务运行）:', e.message);
+      }
     });
     
     server.on('error', (err) => {
@@ -298,6 +320,7 @@ initDatabase()
 // 优雅关闭
 function gracefulShutdown(signal) {
   console.log(`\n收到 ${signal} 信号，正在关闭服务器...`);
+  backup.stop();
   
   if (server) {
     server.close(() => {
