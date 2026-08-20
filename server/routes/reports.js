@@ -166,7 +166,7 @@ router.get('/history/:empId', async (req, res) => {
       SELECT r.*, e.name as emp_name
       FROM reports r
       LEFT JOIN employees e ON r.emp_id = e.id
-      WHERE r.emp_id = ?
+      WHERE r.emp_id = ? AND r.voided = 0
       ORDER BY r.created_at DESC
       LIMIT ? OFFSET ?
     `, [empId, parseInt(limit), parseInt(offset)]);

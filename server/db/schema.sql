@@ -36,6 +36,9 @@ CREATE TABLE IF NOT EXISTS reports (
   report_date DATE NOT NULL,    -- 上报日期
   subtotal REAL NOT NULL,       -- 工价小计
   client_token TEXT,            -- 幂等键：同一次提交重试时复用，避免重复入账
+  voided INTEGER NOT NULL DEFAULT 0,  -- 是否已作废（软删除，保留痕迹可追溯）
+  voided_at DATETIME,           -- 作废时间
+  void_reason TEXT,             -- 作废原因
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (emp_id) REFERENCES employees(id)
 );

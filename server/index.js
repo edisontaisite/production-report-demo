@@ -133,6 +133,12 @@ function initDatabase() {
               'ALTER TABLE report_items ADD COLUMN rqty REAL NOT NULL DEFAULT 0')
               .then(() => addColumn('reports', 'client_token',
                 'ALTER TABLE reports ADD COLUMN client_token TEXT'))
+              .then(() => addColumn('reports', 'voided',
+                'ALTER TABLE reports ADD COLUMN voided INTEGER NOT NULL DEFAULT 0'))
+              .then(() => addColumn('reports', 'voided_at',
+                'ALTER TABLE reports ADD COLUMN voided_at DATETIME'))
+              .then(() => addColumn('reports', 'void_reason',
+                'ALTER TABLE reports ADD COLUMN void_reason TEXT'))
               // 幂等键唯一索引必须在列建好之后创建
               .then(() => runStep(
                 `CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_token

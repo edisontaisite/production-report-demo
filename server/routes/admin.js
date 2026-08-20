@@ -2,6 +2,14 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../auth');
 
+// CSV 单元格转义。除了引号和换行，还要挡住 Excel 公式注入：
+// 以 = + - @ 开头的内容会被 Excel 当公式执行，前面补一个单引号。
+const csvCell = (v) => {
+  let s = String(v ?? '');
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+};
+
 // 登录守卫：除 login / logout / session 外，/api/admin/* 全部需要登录
 router.use(auth.requireAuth);
 
@@ -70,46 +78,101 @@ router.get('/reports', async (req, res) => {
   }
 });
 
+// 作废一条上报：软删除 + 把产量退回工序剩余量。
+// 不做物理删除，保留痕迹可追溯；同时清空 client_token，
+// 否则这个幂等键会一直占着，同一笔再也无法重新提交。
+router.post('/reports/:id/void', async (req, res) => {
+  const db = req.app.locals.db;
+  const { id } = req.params;
+  const reason = typeof (req.body || {}).reason === 'string'
+    ? req.body.reason.trim().slice(0, 200) : '';
+
+  try {
+    const result = await db.runTransaction(async ({ run, all }) => {
+      const rows = await all('SELECT * FROM reports WHERE id = ?', [id]);
+      if (rows.length === 0) throw new Error('上报记录不存在');
+      if (rows[0].voided) throw new Error('该记录已经作废过了');
+
+      const items = await all('SELECT * FROM report_items WHERE report_id = ?', [id]);
+      let restored = 0;
+      for (const it of items) {
+        const upd = await run(
+          `UPDATE processes SET remaining = ROUND(remaining + ?, 2)
+           WHERE order_no = ? AND proc_code = ?`,
+          [it.qty, it.order_no, it.proc_code]
+        );
+        if (upd.changes === 1) restored += it.qty;
+      }
+
+      await run(
+        `UPDATE reports SET voided = 1, voided_at = CURRENT_TIMESTAMP,
+                            void_reason = ?, client_token = NULL
+         WHERE id = ?`,
+        [reason || null, id]
+      );
+
+      return { subtotal: rows[0].subtotal, restored, itemCount: items.length };
+    });
+
+    console.log(`上报 #${id} 已作废，退回产量 ${result.restored}，冲销工价 ¥${result.subtotal}`);
+    res.json({
+      ok: true,
+      message: `已作废，退回产量 ${result.restored} 件、冲销工价 ¥${result.subtotal.toFixed(2)}`
+    });
+  } catch (err) {
+    console.error('作废上报失败:', err);
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
 router.get('/stats', async (req, res) => {
   const db = req.app.locals.db;
   const { start_date, end_date, today } = req.query;
   
   try {
-    let where = [];
-    let params = [];
-    
-    if (start_date) { where.push('report_date >= ?'); params.push(start_date); }
-    if (end_date) { where.push('report_date <= ?'); params.push(end_date); }
-    
-    const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
-    
+    // 按表别名拼条件，避免以前那种「拼好再正则替换列名」的写法
+    // （那正是 WHERE WHERE 那个 bug 的来源）。已作废的记录一律不计入统计。
+    const buildWhere = (alias) => {
+      const p = alias ? alias + '.' : '';
+      const where = [`${p}voided = 0`];
+      const params = [];
+      if (start_date) { where.push(`${p}report_date >= ?`); params.push(start_date); }
+      if (end_date) { where.push(`${p}report_date <= ?`); params.push(end_date); }
+      return { clause: 'WHERE ' + where.join(' AND '), params };
+    };
+    const plain = buildWhere('');    // 直接 FROM reports
+    const aliased = buildWhere('r'); // 有 JOIN、reports 别名为 r
+
     // 今日统计用客户端传来的本地日期（服务器时区可能与用户不同）
     const todayCond = today && /^\d{4}-\d{2}-\d{2}$/.test(today)
-      ? { where: 'report_date = ?', params: [today] }
-      : { where: "report_date = date('now')", params: [] };
-    
-    const totalResult = await db.runQuery(`SELECT COALESCE(SUM(subtotal), 0) as total FROM reports ${whereClause}`, params);
-    const todayResult = await db.runQuery(`SELECT COUNT(*) as count FROM reports WHERE ${todayCond.where}`, todayCond.params);
-    const todayAmountResult = await db.runQuery(`SELECT COALESCE(SUM(subtotal), 0) as total FROM reports WHERE ${todayCond.where}`, todayCond.params);
-    
+      ? { where: 'voided = 0 AND report_date = ?', params: [today] }
+      : { where: "voided = 0 AND report_date = date('now')", params: [] };
+
+    const totalResult = await db.runQuery(
+      `SELECT COALESCE(SUM(subtotal), 0) as total FROM reports ${plain.clause}`, plain.params);
+    const todayResult = await db.runQuery(
+      `SELECT COUNT(*) as count FROM reports WHERE ${todayCond.where}`, todayCond.params);
+    const todayAmountResult = await db.runQuery(
+      `SELECT COALESCE(SUM(subtotal), 0) as total FROM reports WHERE ${todayCond.where}`, todayCond.params);
+
     const byOrder = await db.runQuery(`
       SELECT ri.order_no, o.product, SUM(ri.qty) as total_qty, SUM(ri.amount) as total_amount, COUNT(DISTINCT ri.report_id) as report_count
       FROM report_items ri
       LEFT JOIN orders o ON ri.order_no = o.order_no
-      LEFT JOIN reports r ON ri.report_id = r.id
-      ${whereClause ? whereClause.replace(/\breport_date\b/g, 'r.report_date') : ''}
+      JOIN reports r ON ri.report_id = r.id
+      ${aliased.clause}
       GROUP BY ri.order_no
       ORDER BY total_amount DESC
-    `, params);
-    
+    `, aliased.params);
+
     const byEmployee = await db.runQuery(`
       SELECT r.emp_id, e.name, e.factory, e.grp, COUNT(*) as report_count, SUM(r.subtotal) as total_amount
       FROM reports r
       LEFT JOIN employees e ON r.emp_id = e.id
-      ${whereClause}
+      ${aliased.clause}
       GROUP BY r.emp_id
       ORDER BY total_amount DESC
-    `, params);
+    `, aliased.params);
     
     res.json({ 
       ok: true, 
@@ -132,14 +195,15 @@ router.get('/export', async (req, res) => {
   const { start_date, end_date } = req.query;
   
   try {
-    let where = [];
+    // 已作废的记录不进导出，否则财务按导出算工资会多发
+    let where = ['r.voided = 0'];
     let params = [];
-    
+
     if (start_date) { where.push('r.report_date >= ?'); params.push(start_date); }
     if (end_date) { where.push('r.report_date <= ?'); params.push(end_date); }
-    
-    const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
-    
+
+    const whereClause = 'WHERE ' + where.join(' AND ');
+
     const reports = await db.runQuery(`
       SELECT r.report_date, e.id as emp_id, e.name as emp_name, e.factory, e.grp, ri.order_no, ri.proc_code, ri.proc_name, ri.qty, ri.rqty, ri.unit_price, ri.amount, r.subtotal
       FROM reports r
@@ -150,10 +214,6 @@ router.get('/export', async (req, res) => {
     `, params);
     
     const headers = ['日期', '工号', '姓名', '工厂', '组别', '订单号', '工序代码', '工序', '产量', '返工数', '单价', '金额', '小计'];
-    const csvCell = v => {
-      const s = String(v ?? '');
-      return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-    };
     const rows = reports.map(r => [
       r.report_date, r.emp_id, r.emp_name, r.factory, r.grp,
       r.order_no, r.proc_code, r.proc_name, r.qty, r.rqty, r.unit_price, r.amount, r.subtotal
@@ -316,6 +376,150 @@ router.post('/orders', async (req, res) => {
   }
 });
 
+// 修改工序：单价 / 剩余产量 / 名称。
+// 单价改动不会污染历史工资 —— report_items 里存的是下单时的单价快照。
+router.put('/orders/:orderNo/processes/:procCode', async (req, res) => {
+  const db = req.app.locals.db;
+  const { orderNo, procCode } = req.params;
+  const { unit_price, remaining, proc_name, mnemonic } = req.body || {};
+
+  const sets = [];
+  const params = [];
+
+  if (unit_price !== undefined && unit_price !== null && unit_price !== '') {
+    const v = Number(unit_price);
+    if (!Number.isFinite(v) || v < 0) {
+      return res.status(400).json({ ok: false, error: '单价必须是不小于 0 的数字' });
+    }
+    sets.push('unit_price = ?'); params.push(Math.round(v * 100) / 100);
+  }
+  if (remaining !== undefined && remaining !== null && remaining !== '') {
+    const v = Number(remaining);
+    if (!Number.isFinite(v) || v < 0) {
+      return res.status(400).json({ ok: false, error: '剩余产量必须是不小于 0 的数字' });
+    }
+    sets.push('remaining = ?'); params.push(Math.round(v * 100) / 100);
+  }
+  if (typeof proc_name === 'string' && proc_name.trim()) {
+    sets.push('proc_name = ?'); params.push(proc_name.trim());
+  }
+  if (typeof mnemonic === 'string') {
+    sets.push('mnemonic = ?'); params.push(mnemonic.trim());
+  }
+
+  if (sets.length === 0) {
+    return res.status(400).json({ ok: false, error: '没有需要修改的字段' });
+  }
+
+  try {
+    const rows = await db.runQuery(
+      'SELECT * FROM processes WHERE order_no = ? AND proc_code = ?', [orderNo, procCode]);
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: '工序不存在' });
+    }
+
+    await db.runInsert(
+      `UPDATE processes SET ${sets.join(', ')} WHERE order_no = ? AND proc_code = ?`,
+      [...params, orderNo, procCode]
+    );
+    console.log(`工序 ${orderNo}/${procCode} 已修改：${sets.join(', ')}`);
+    res.json({ ok: true, message: '工序已更新' });
+  } catch (err) {
+    console.error('修改工序失败:', err);
+    res.status(500).json({ ok: false, error: '服务器错误' });
+  }
+});
+
+// 月度工资表：按员工汇总某个月的产量与应发工价（已作废的不计）
+router.get('/payroll', async (req, res) => {
+  const db = req.app.locals.db;
+  const { month } = req.query;
+  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+    return res.status(400).json({ ok: false, error: '月份格式应为 YYYY-MM' });
+  }
+
+  try {
+    const rows = await db.runQuery(`
+      SELECT r.emp_id, e.name, e.factory, e.grp,
+             COUNT(DISTINCT r.id) as report_count,
+             COUNT(DISTINCT r.report_date) as work_days,
+             COALESCE(SUM(ri.qty), 0) as total_qty,
+             COALESCE(SUM(ri.rqty), 0) as total_rqty,
+             COALESCE(SUM(ri.amount), 0) as total_amount
+      FROM reports r
+      LEFT JOIN employees e ON r.emp_id = e.id
+      LEFT JOIN report_items ri ON ri.report_id = r.id
+      WHERE r.voided = 0 AND strftime('%Y-%m', r.report_date) = ?
+      GROUP BY r.emp_id
+      ORDER BY total_amount DESC
+    `, [month]);
+
+    const data = rows.map(r => ({
+      ...r,
+      total_amount: Math.round(r.total_amount * 100) / 100,
+      fpy: r.total_qty > 0
+        ? Math.round((r.total_qty - r.total_rqty) / r.total_qty * 1000) / 10
+        : null
+    }));
+
+    res.json({
+      ok: true,
+      month,
+      data,
+      grand_total: Math.round(data.reduce((s, r) => s + r.total_amount, 0) * 100) / 100
+    });
+  } catch (err) {
+    console.error('获取月度工资表失败:', err);
+    res.status(500).json({ ok: false, error: '服务器错误' });
+  }
+});
+
+// 月度工资表导出
+router.get('/payroll/export', async (req, res) => {
+  const db = req.app.locals.db;
+  const { month } = req.query;
+  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+    return res.status(400).json({ ok: false, error: '月份格式应为 YYYY-MM' });
+  }
+
+  try {
+    const rows = await db.runQuery(`
+      SELECT r.emp_id, e.name, e.factory, e.grp,
+             COUNT(DISTINCT r.report_date) as work_days,
+             COALESCE(SUM(ri.qty), 0) as total_qty,
+             COALESCE(SUM(ri.rqty), 0) as total_rqty,
+             COALESCE(SUM(ri.amount), 0) as total_amount
+      FROM reports r
+      LEFT JOIN employees e ON r.emp_id = e.id
+      LEFT JOIN report_items ri ON ri.report_id = r.id
+      WHERE r.voided = 0 AND strftime('%Y-%m', r.report_date) = ?
+      GROUP BY r.emp_id
+      ORDER BY e.grp, r.emp_id
+    `, [month]);
+
+    const headers = ['工号', '姓名', '工厂', '组别', '出勤天数', '总产量', '返工数', '应发工价'];
+    const body = rows.map(r => [
+      r.emp_id, r.name, r.factory, r.grp, r.work_days,
+      r.total_qty, r.total_rqty, (Math.round(r.total_amount * 100) / 100).toFixed(2)
+    ]);
+    const total = rows.reduce((s, r) => s + r.total_amount, 0);
+    body.push(['合计', '', '', '', '', '', '', (Math.round(total * 100) / 100).toFixed(2)]);
+
+    const csv = [headers, ...body].map(row => row.map(csvCell).join(',')).join('\n');
+
+    const fileName = `月度工资表_${month}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="payroll_${month}.csv"; filename*=UTF-8''${encodeURIComponent(fileName)}`
+    );
+    res.send('\ufeff' + csv);
+  } catch (err) {
+    console.error('导出月度工资表失败:', err);
+    res.status(500).json({ ok: false, error: '服务器错误' });
+  }
+});
+
 // 组别目标配置
 router.get('/group-targets', async (req, res) => {
   const db = req.app.locals.db;
@@ -414,7 +618,7 @@ router.get('/group-report', async (req, res) => {
       FROM reports r
       JOIN employees e ON r.emp_id = e.id
       JOIN report_items ri ON ri.report_id = r.id
-      WHERE r.report_date = ?
+      WHERE r.report_date = ? AND r.voided = 0
       GROUP BY e.grp, e.id
     `, [date]);
     

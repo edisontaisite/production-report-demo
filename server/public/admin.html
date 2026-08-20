@@ -74,6 +74,11 @@
   .amount{color:#12b886; font-weight:500;}
   .badge{display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px;}
   .badge-green{background:#e6f7f2; color:#0ca678;}
+  .badge-void{background:#fdecec; color:#c92a2a;}
+  .js-proc-edit{cursor:pointer;}
+  .js-proc-edit:hover{outline:1px solid #12b886;}
+  .voided-row{opacity:.55;}
+  .voided-row .amount{text-decoration:line-through;}
 
   .pagination{display:flex; align-items:center; justify-content:center; gap:8px; padding:16px;}
   .pagination button{width:36px; height:36px; padding:0; display:flex; align-items:center; justify-content:center;}
@@ -199,6 +204,7 @@
   <div class="nav-item" data-tab="employees">员工管理</div>
   <div class="nav-item" data-tab="orders">订单管理</div>
   <div class="nav-item" data-tab="group">组别日报</div>
+  <div class="nav-item" data-tab="payroll">月度工资</div>
 </div>
 
 <div class="container">
@@ -248,6 +254,21 @@
 
   <!-- 统计数据 -->
   <div class="tab-content" id="tab-stats">
+    <div class="card">
+      <div class="card-body">
+        <div class="filters">
+          <div class="filter-item">
+            <label>开始日期</label><input type="date" id="statStart">
+          </div>
+          <div class="filter-item">
+            <label>结束日期</label><input type="date" id="statEnd">
+          </div>
+          <button class="btn-primary" onclick="loadStats()">查询</button>
+          <span style="font-size:12px;color:#8a94a6">不选日期 = 全部时间；已作废的记录不计入</span>
+        </div>
+      </div>
+    </div>
+
     <div class="stat-grid">
       <div class="stat-card">
         <div class="label">总工价</div>
@@ -374,6 +395,35 @@
   </div>
 
   <!-- 组别日报 -->
+
+  <!-- 月度工资 -->
+  <div class="tab-content" id="tab-payroll">
+    <div class="card">
+      <div class="card-header">
+        <h2>月度工资表</h2>
+        <div class="filters" style="gap:8px">
+          <input type="month" id="payrollMonth">
+          <button class="btn-primary" onclick="loadPayroll()">查询</button>
+          <button class="btn-secondary" onclick="exportPayroll()">导出CSV</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div style="margin-bottom:12px;font-size:14px">
+          全厂应发合计：<span class="amount" id="payrollTotal" style="font-size:18px">¥0.00</span>
+          <span style="font-size:12px;color:#8a94a6;margin-left:10px">已作废的上报不计入</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>工号</th><th>姓名</th><th>工厂/组别</th><th>出勤天数</th><th>上报笔数</th><th>总产量</th><th>返工数</th><th>FPY</th><th>应发工价</th></tr>
+            </thead>
+            <tbody id="payrollBody"><tr><td colspan="9" class="empty">请选择月份后查询</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="tab-content" id="tab-group">
     <div class="card">
       <div class="card-header">
@@ -528,6 +578,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     if (item.dataset.tab === 'employees') loadEmployees();
     if (item.dataset.tab === 'orders') loadOrders();
     if (item.dataset.tab === 'group') { loadGroupTargets(); loadGroupReport(); }
+    if (item.dataset.tab === 'payroll') loadPayroll();
   };
 });
 
@@ -556,14 +607,17 @@ async function loadReports(page) {
   }
   
   tbody.innerHTML = res.data.map(r => `
-    <tr>
-      <td>${r.report_date}</td>
+    <tr class="${r.voided ? 'voided-row' : ''}">
+      <td>${r.report_date}${r.voided ? ' <span class="badge badge-void">已作废</span>' : ''}</td>
       <td>${esc(r.emp_id)}</td>
       <td>${esc(r.emp_name || '-')}</td>
       <td>${esc(r.factory || '')} / ${esc(r.grp || '')}</td>
       <td>${r.items.map(i => `<div style="font-size:12px">${esc(i.order_no)} ${esc(i.proc_name)} × ${esc(i.qty)} <span class="amount">¥${money(i.amount)}</span></div>`).join('')}</td>
       <td class="amount">¥${money(r.subtotal)}</td>
-      <td><button class="btn-secondary" style="height:28px;font-size:12px;padding:0 8px" onclick="viewReport(${r.id})">查看</button></td>
+      <td style="white-space:nowrap">
+        <button class="btn-secondary" style="height:28px;font-size:12px;padding:0 8px" onclick="viewReport(${r.id})">查看</button>
+        ${r.voided ? '' : `<button class="btn-mini danger js-void" data-id="${r.id}" style="margin-left:4px">作废</button>`}
+      </td>
     </tr>
   `).join('');
   
@@ -650,6 +704,78 @@ function exportData() {
   window.location.href = url;
 }
 
+/* 修改工序单价 / 剩余产量 */
+async function editProcess(d) {
+  const price = prompt(
+    `修改工序 ${d.proc}（订单 ${d.order}）\n\n单价（元/件），当前 ${d.price}：`, d.price);
+  if (price === null) return;
+  const remaining = prompt(`剩余产量，当前 ${d.remaining}：`, d.remaining);
+  if (remaining === null) return;
+
+  const res = await API.put(
+    '/admin/orders/' + encodeURIComponent(d.order) + '/processes/' + encodeURIComponent(d.proc),
+    { unit_price: price, remaining: remaining }
+  );
+  if (res.ok) {
+    toast('工序已更新（历史工资不受影响）');
+    loadOrders();
+  } else if (!res.unauthorized) {
+    toast(res.error || '修改失败');
+  }
+}
+
+/* 月度工资表 */
+async function loadPayroll() {
+  const month = $("#payrollMonth").value;
+  const tbody = $("#payrollBody");
+  if (!month) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">请先选择月份</td></tr>';
+    return;
+  }
+  const res = await API.get('/admin/payroll?month=' + encodeURIComponent(month));
+  if (!res.ok) {
+    if (!res.unauthorized) tbody.innerHTML = `<tr><td colspan="9" class="empty">${esc(res.error || '加载失败')}</td></tr>`;
+    return;
+  }
+  $("#payrollTotal").textContent = '¥' + money(res.grand_total);
+  if (!res.data.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">该月份没有有效上报记录</td></tr>';
+    return;
+  }
+  tbody.innerHTML = res.data.map(r => `
+    <tr>
+      <td>${esc(r.emp_id)}</td>
+      <td>${esc(r.name || '-')}</td>
+      <td>${esc(r.factory || '')} / ${esc(r.grp || '')}</td>
+      <td>${r.work_days}</td>
+      <td>${r.report_count}</td>
+      <td>${r.total_qty}</td>
+      <td>${r.total_rqty}</td>
+      <td>${r.fpy === null ? '-' : r.fpy + '%'}</td>
+      <td class="amount">¥${money(r.total_amount)}</td>
+    </tr>
+  `).join('');
+}
+
+function exportPayroll() {
+  const month = $("#payrollMonth").value;
+  if (!month) return toast('请先选择月份');
+  window.location.href = '/api/admin/payroll/export?month=' + encodeURIComponent(month);
+}
+
+/* 作废上报 */
+async function voidReport(id) {
+  const reason = prompt('作废这条上报？产量会退回工序剩余量，工价一并冲销。\n\n请填写作废原因（可留空）：');
+  if (reason === null) return;   // 点了取消
+  const res = await API.post('/admin/reports/' + encodeURIComponent(id) + '/void', { reason });
+  if (res.ok) {
+    toast(res.message || '已作废');
+    loadReports(currentPage);
+  } else if (!res.unauthorized) {
+    toast(res.error || '作废失败');
+  }
+}
+
 /* 统计数据 */
 function localDateStr(d) {
   const pad = (n) => (n < 10 ? '0' + n : '' + n);
@@ -657,7 +783,11 @@ function localDateStr(d) {
 }
 
 async function loadStats() {
-  const res = await API.get('/admin/stats?today=' + localDateStr(new Date()));
+  const params = ['today=' + localDateStr(new Date())];
+  const st = $("#statStart").value, en = $("#statEnd").value;
+  if (st) params.push('start_date=' + st);
+  if (en) params.push('end_date=' + en);
+  const res = await API.get('/admin/stats?' + params.join('&'));
   if (!res.ok) return;
   
   const d = res.data;
@@ -736,6 +866,10 @@ document.addEventListener('click', (ev) => {
   if (ev.target.closest('.js-emp-cancel')) return loadEmployees();
   const gdel = ev.target.closest('.js-grp-del');
   if (gdel) return deleteGroupTarget(gdel.dataset.grp);
+  const vd = ev.target.closest('.js-void');
+  if (vd) return voidReport(vd.dataset.id);
+  const pe = ev.target.closest('.js-proc-edit');
+  if (pe) return editProcess(pe.dataset);
 });
 
 function editEmployee(id) {
@@ -894,7 +1028,10 @@ async function loadOrders() {
         </div>
         <div class="process-list">
           ${procRes.ok ? procRes.data.map(p => `
-            <span class="process-tag">${esc(p.proc_code)} ${esc(p.proc_name)} ¥${esc(p.unit_price)} (剩${esc(p.remaining)})</span>
+            <span class="process-tag js-proc-edit" title="点击修改单价/剩余产量"
+              data-order="${esc(order.order_no)}" data-proc="${esc(p.proc_code)}"
+              data-price="${esc(p.unit_price)}" data-remaining="${esc(p.remaining)}"
+            >${esc(p.proc_code)} ${esc(p.proc_name)} ¥${esc(p.unit_price)} (剩${esc(p.remaining)})</span>
           `).join('') : ''}
         </div>
       </div>
@@ -1018,6 +1155,9 @@ async function deleteGroupTarget(grp) {
   $("#filterStart").value = firstDay;
   $("#filterEnd").value = today;
   $("#groupDate").value = today;
+  $("#payrollMonth").value = today.slice(0, 7);
+  $("#statStart").value = firstDay;
+  $("#statEnd").value = today;
 
   addProcRow(); // 订单管理默认一行工序输入
 
