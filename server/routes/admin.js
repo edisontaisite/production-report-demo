@@ -376,6 +376,141 @@ router.post('/orders', async (req, res) => {
   }
 });
 
+// 修改订单：款号 / 产品名称。
+// 订单号是主键、且 report_items 按订单号引用，改了会让历史明细对不上，所以不允许改。
+router.put('/orders/:orderNo', async (req, res) => {
+  const db = req.app.locals.db;
+  const { orderNo } = req.params;
+  const { style_no, product } = req.body || {};
+
+  try {
+    const rows = await db.runQuery('SELECT * FROM orders WHERE order_no = ?', [orderNo]);
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: '订单不存在' });
+    }
+
+    await db.runInsert(
+      'UPDATE orders SET style_no = ?, product = ? WHERE order_no = ?',
+      [
+        typeof style_no === 'string' ? style_no.trim() : (rows[0].style_no || ''),
+        typeof product === 'string' ? product.trim() : (rows[0].product || ''),
+        orderNo
+      ]
+    );
+    res.json({ ok: true, message: '订单已更新' });
+  } catch (err) {
+    console.error('修改订单失败:', err);
+    res.status(500).json({ ok: false, error: '服务器错误' });
+  }
+});
+
+// 删除订单：只有从来没被上报过的订单才允许删，否则历史工资凭证会失去依据
+router.delete('/orders/:orderNo', async (req, res) => {
+  const db = req.app.locals.db;
+  const { orderNo } = req.params;
+
+  try {
+    const rows = await db.runQuery('SELECT * FROM orders WHERE order_no = ?', [orderNo]);
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: '订单不存在' });
+    }
+
+    const used = await db.runQuery(
+      'SELECT COUNT(*) as c FROM report_items WHERE order_no = ?', [orderNo]);
+    if (used[0].c > 0) {
+      return res.status(400).json({
+        ok: false,
+        error: `该订单已有 ${used[0].c} 条上报明细，不能删除（需保留历史工资凭证）`
+      });
+    }
+
+    await db.runTransaction(async ({ run }) => {
+      await run('DELETE FROM processes WHERE order_no = ?', [orderNo]);
+      await run('DELETE FROM orders WHERE order_no = ?', [orderNo]);
+    });
+
+    console.log(`订单 ${orderNo} 已删除`);
+    res.json({ ok: true, message: '订单已删除' });
+  } catch (err) {
+    console.error('删除订单失败:', err);
+    res.status(500).json({ ok: false, error: '服务器错误' });
+  }
+});
+
+// 给已有订单追加工序
+router.post('/orders/:orderNo/processes', async (req, res) => {
+  const db = req.app.locals.db;
+  const { orderNo } = req.params;
+  const { proc_code, proc_name, mnemonic, unit_price, remaining } = req.body || {};
+
+  if (!proc_code || !String(proc_code).trim()) {
+    return res.status(400).json({ ok: false, error: '工序代码不能为空' });
+  }
+  if (!proc_name || !String(proc_name).trim()) {
+    return res.status(400).json({ ok: false, error: '工序名称不能为空' });
+  }
+  const price = Number(unit_price);
+  const rem = Number(remaining);
+  if (!Number.isFinite(price) || price < 0) {
+    return res.status(400).json({ ok: false, error: '工价必须是不小于 0 的数字' });
+  }
+  if (!Number.isFinite(rem) || rem < 0) {
+    return res.status(400).json({ ok: false, error: '剩余产量必须是不小于 0 的数字' });
+  }
+
+  try {
+    const order = await db.runQuery('SELECT 1 FROM orders WHERE order_no = ?', [orderNo]);
+    if (order.length === 0) {
+      return res.status(404).json({ ok: false, error: '订单不存在' });
+    }
+
+    await db.runInsert(
+      'INSERT INTO processes (order_no, proc_code, proc_name, mnemonic, unit_price, remaining) VALUES (?, ?, ?, ?, ?, ?)',
+      [orderNo, String(proc_code).trim(), String(proc_name).trim(),
+       typeof mnemonic === 'string' ? mnemonic.trim() : '',
+       Math.round(price * 100) / 100, Math.round(rem * 100) / 100]
+    );
+    res.json({ ok: true, message: '工序已添加' });
+  } catch (err) {
+    if (err.message.includes('UNIQUE constraint failed')) {
+      return res.status(400).json({ ok: false, error: '该订单下已存在同样的工序代码' });
+    }
+    console.error('添加工序失败:', err);
+    res.status(500).json({ ok: false, error: '服务器错误' });
+  }
+});
+
+// 删除工序：同样要求该工序从没被上报过
+router.delete('/orders/:orderNo/processes/:procCode', async (req, res) => {
+  const db = req.app.locals.db;
+  const { orderNo, procCode } = req.params;
+
+  try {
+    const rows = await db.runQuery(
+      'SELECT * FROM processes WHERE order_no = ? AND proc_code = ?', [orderNo, procCode]);
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: '工序不存在' });
+    }
+
+    const used = await db.runQuery(
+      'SELECT COUNT(*) as c FROM report_items WHERE order_no = ? AND proc_code = ?',
+      [orderNo, procCode]);
+    if (used[0].c > 0) {
+      return res.status(400).json({
+        ok: false,
+        error: `该工序已有 ${used[0].c} 条上报明细，不能删除（需保留历史工资凭证）`
+      });
+    }
+
+    await db.runInsert(
+      'DELETE FROM processes WHERE order_no = ? AND proc_code = ?', [orderNo, procCode]);
+    res.json({ ok: true, message: '工序已删除' });
+  } catch (err) {
+    console.error('删除工序失败:', err);
+    res.status(500).json({ ok: false, error: '服务器错误' });
+  }
+});
+
 // 修改工序：单价 / 剩余产量 / 名称。
 // 单价改动不会污染历史工资 —— report_items 里存的是下单时的单价快照。
 router.put('/orders/:orderNo/processes/:procCode', async (req, res) => {

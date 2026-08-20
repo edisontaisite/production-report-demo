@@ -75,8 +75,6 @@
   .badge{display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px;}
   .badge-green{background:#e6f7f2; color:#0ca678;}
   .badge-void{background:#fdecec; color:#c92a2a;}
-  .js-proc-edit{cursor:pointer;}
-  .js-proc-edit:hover{outline:1px solid #12b886;}
   .voided-row{opacity:.55;}
   .voided-row .amount{text-decoration:line-through;}
 
@@ -152,7 +150,14 @@
   .order-card .product{color:#666; font-size:13px;}
   .order-card .stats{display:flex; gap:16px; font-size:12px; color:#888;}
   .process-list{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
-  .process-tag{background:#fff; border:1px solid #e0e0e0; border-radius:4px; padding:4px 8px; font-size:12px;}
+  .process-tag{background:#fff; border:1px solid #e0e0e0; border-radius:4px; padding:4px 8px; font-size:12px;
+    display:inline-flex; align-items:center; gap:6px;}
+  .process-tag .js-proc-edit{cursor:pointer;}
+  .process-tag:hover{border-color:#12b886;}
+  .process-tag .tag-del{cursor:pointer; color:#bbb; font-size:14px; line-height:1;}
+  .process-tag .tag-del:hover{color:#e5484d;}
+  .process-tag.add{cursor:pointer; color:#12b886; border-style:dashed; border-color:#12b886;}
+  .order-card .header-right{display:flex; align-items:center; gap:8px;}
 
   /* 移动端适配（小程序 web-view / 手机浏览器） */
   @media (max-width: 640px){
@@ -704,6 +709,51 @@ function exportData() {
   window.location.href = url;
 }
 
+/* 订单编辑 / 删除 */
+async function editOrder(d) {
+  const style = prompt(`订单 ${d.order}\n\n款号：`, d.style || '');
+  if (style === null) return;
+  const product = prompt('产品名称：', d.product || '');
+  if (product === null) return;
+
+  const res = await API.put('/admin/orders/' + encodeURIComponent(d.order),
+    { style_no: style, product: product });
+  if (res.ok) { toast('订单已更新'); loadOrders(); }
+  else if (!res.unauthorized) toast(res.error || '修改失败');
+}
+
+async function deleteOrder(orderNo) {
+  if (!confirm(`确定删除订单 ${orderNo} 吗？\n\n该订单下的所有工序会一并删除。\n已经有上报记录的订单不能删除。`)) return;
+  const res = await API.del('/admin/orders/' + encodeURIComponent(orderNo));
+  if (res.ok) { toast('订单已删除'); loadOrders(); }
+  else if (!res.unauthorized) toast(res.error || '删除失败');
+}
+
+/* 工序增删 */
+async function addProcessToOrder(orderNo) {
+  const code = prompt(`给订单 ${orderNo} 添加工序\n\n工序代码（如 GX09）：`);
+  if (code === null || !code.trim()) return;
+  const name = prompt('工序名称（如 烫领）：');
+  if (name === null || !name.trim()) return;
+  const price = prompt('工价（元/件）：', '0');
+  if (price === null) return;
+  const remaining = prompt('剩余产量：', '0');
+  if (remaining === null) return;
+
+  const res = await API.post('/admin/orders/' + encodeURIComponent(orderNo) + '/processes',
+    { proc_code: code, proc_name: name, unit_price: price, remaining: remaining });
+  if (res.ok) { toast('工序已添加'); loadOrders(); }
+  else if (!res.unauthorized) toast(res.error || '添加失败');
+}
+
+async function deleteProcess(d) {
+  if (!confirm(`确定删除工序 ${d.proc} 吗？\n\n已经有上报记录的工序不能删除。`)) return;
+  const res = await API.del(
+    '/admin/orders/' + encodeURIComponent(d.order) + '/processes/' + encodeURIComponent(d.proc));
+  if (res.ok) { toast('工序已删除'); loadOrders(); }
+  else if (!res.unauthorized) toast(res.error || '删除失败');
+}
+
 /* 修改工序单价 / 剩余产量 */
 async function editProcess(d) {
   const price = prompt(
@@ -870,6 +920,14 @@ document.addEventListener('click', (ev) => {
   if (vd) return voidReport(vd.dataset.id);
   const pe = ev.target.closest('.js-proc-edit');
   if (pe) return editProcess(pe.dataset);
+  const pd = ev.target.closest('.js-proc-del');
+  if (pd) return deleteProcess(pd.dataset);
+  const pa = ev.target.closest('.js-proc-add');
+  if (pa) return addProcessToOrder(pa.dataset.order);
+  const oe = ev.target.closest('.js-order-edit');
+  if (oe) return editOrder(oe.dataset);
+  const od = ev.target.closest('.js-order-del');
+  if (od) return deleteOrder(od.dataset.order);
 });
 
 function editEmployee(id) {
@@ -1016,10 +1074,15 @@ async function loadOrders() {
   for (const order of res.data) {
     const procRes = await API.get('/orders/' + encodeURIComponent(order.order_no) + '/processes');
     html += `
-      <div class="order-card">
+      <div class="order-card" data-order="${esc(order.order_no)}">
         <div class="header">
           <span class="order-no">${esc(order.order_no)}</span>
-          <span style="color:#888;font-size:12px">${esc(order.style_no || '')}</span>
+          <span class="header-right">
+            <span style="color:#888;font-size:12px">${esc(order.style_no || '')}</span>
+            <button class="btn-mini js-order-edit" data-order="${esc(order.order_no)}"
+              data-style="${esc(order.style_no || '')}" data-product="${esc(order.product || '')}">编辑</button>
+            <button class="btn-mini danger js-order-del" data-order="${esc(order.order_no)}">删除</button>
+          </span>
         </div>
         <div class="product">${esc(order.product || '-')}</div>
         <div class="stats">
@@ -1028,11 +1091,16 @@ async function loadOrders() {
         </div>
         <div class="process-list">
           ${procRes.ok ? procRes.data.map(p => `
-            <span class="process-tag js-proc-edit" title="点击修改单价/剩余产量"
-              data-order="${esc(order.order_no)}" data-proc="${esc(p.proc_code)}"
-              data-price="${esc(p.unit_price)}" data-remaining="${esc(p.remaining)}"
-            >${esc(p.proc_code)} ${esc(p.proc_name)} ¥${esc(p.unit_price)} (剩${esc(p.remaining)})</span>
+            <span class="process-tag">
+              <span class="js-proc-edit" title="点击修改工价 / 剩余产量"
+                data-order="${esc(order.order_no)}" data-proc="${esc(p.proc_code)}"
+                data-price="${esc(p.unit_price)}" data-remaining="${esc(p.remaining)}"
+              >${esc(p.proc_code)} ${esc(p.proc_name)} ¥${esc(p.unit_price)} (剩${esc(p.remaining)})</span>
+              <span class="tag-del js-proc-del" title="删除该工序"
+                data-order="${esc(order.order_no)}" data-proc="${esc(p.proc_code)}">×</span>
+            </span>
           `).join('') : ''}
+          <span class="process-tag add js-proc-add" data-order="${esc(order.order_no)}">＋ 添加工序</span>
         </div>
       </div>
     `;
