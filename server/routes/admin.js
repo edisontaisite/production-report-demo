@@ -406,7 +406,10 @@ router.put('/orders/:orderNo', async (req, res) => {
   }
 });
 
-// 删除订单：只有从来没被上报过的订单才允许删，否则历史工资凭证会失去依据
+// 删除订单。
+// 只有「未作废」的上报才拦截 —— 那是真实工资凭证，不能删。
+// 已作废的上报工价早已冲销、产量也退回过，订单删掉时把这些残留明细一并清掉，
+// 否则作废之后订单永远删不了，测试数据没有任何清理路径。
 router.delete('/orders/:orderNo', async (req, res) => {
   const db = req.app.locals.db;
   const { orderNo } = req.params;
@@ -417,22 +420,41 @@ router.delete('/orders/:orderNo', async (req, res) => {
       return res.status(404).json({ ok: false, error: '订单不存在' });
     }
 
-    const used = await db.runQuery(
-      'SELECT COUNT(*) as c FROM report_items WHERE order_no = ?', [orderNo]);
-    if (used[0].c > 0) {
+    const live = await db.runQuery(`
+      SELECT COUNT(*) as c FROM report_items ri
+      JOIN reports r ON ri.report_id = r.id
+      WHERE ri.order_no = ? AND r.voided = 0
+    `, [orderNo]);
+    if (live[0].c > 0) {
       return res.status(400).json({
         ok: false,
-        error: `该订单已有 ${used[0].c} 条上报明细，不能删除（需保留历史工资凭证）`
+        error: `该订单还有 ${live[0].c} 条有效上报明细，不能删除。` +
+               `如果是测试数据，请先到「上报记录」把这些上报作废，再回来删除订单。`
       });
     }
 
-    await db.runTransaction(async ({ run }) => {
+    const removed = await db.runTransaction(async ({ run, all }) => {
+      // 只清掉本订单的明细行；同一条上报里若还有别的订单的明细，那条上报要保留
+      const items = await all(
+        'SELECT COUNT(*) as c FROM report_items WHERE order_no = ?', [orderNo]);
+      await run('DELETE FROM report_items WHERE order_no = ?', [orderNo]);
+      // 明细被清空、且本身已作废的上报，留着只是空壳，一并删掉
+      const orphans = await run(`
+        DELETE FROM reports
+        WHERE voided = 1
+          AND NOT EXISTS (SELECT 1 FROM report_items ri WHERE ri.report_id = reports.id)
+      `);
       await run('DELETE FROM processes WHERE order_no = ?', [orderNo]);
       await run('DELETE FROM orders WHERE order_no = ?', [orderNo]);
+      return { items: items[0].c, reports: orphans.changes };
     });
 
-    console.log(`订单 ${orderNo} 已删除`);
-    res.json({ ok: true, message: '订单已删除' });
+    const extra = removed.items
+      ? `，同时清理了 ${removed.items} 条已作废的上报明细` +
+        (removed.reports ? `和 ${removed.reports} 条空上报记录` : '')
+      : '';
+    console.log(`订单 ${orderNo} 已删除${extra}`);
+    res.json({ ok: true, message: `订单已删除${extra}` });
   } catch (err) {
     console.error('删除订单失败:', err);
     res.status(500).json({ ok: false, error: '服务器错误' });
@@ -494,19 +516,38 @@ router.delete('/orders/:orderNo/processes/:procCode', async (req, res) => {
       return res.status(404).json({ ok: false, error: '工序不存在' });
     }
 
-    const used = await db.runQuery(
-      'SELECT COUNT(*) as c FROM report_items WHERE order_no = ? AND proc_code = ?',
-      [orderNo, procCode]);
-    if (used[0].c > 0) {
+    // 同订单删除：只有未作废的上报才拦，否则作废之后工序永远删不掉
+    const live = await db.runQuery(`
+      SELECT COUNT(*) as c FROM report_items ri
+      JOIN reports r ON ri.report_id = r.id
+      WHERE ri.order_no = ? AND ri.proc_code = ? AND r.voided = 0
+    `, [orderNo, procCode]);
+    if (live[0].c > 0) {
       return res.status(400).json({
         ok: false,
-        error: `该工序已有 ${used[0].c} 条上报明细，不能删除（需保留历史工资凭证）`
+        error: `该工序还有 ${live[0].c} 条有效上报明细，不能删除。` +
+               `如果是测试数据，请先到「上报记录」把这些上报作废，再回来删除。`
       });
     }
 
-    await db.runInsert(
-      'DELETE FROM processes WHERE order_no = ? AND proc_code = ?', [orderNo, procCode]);
-    res.json({ ok: true, message: '工序已删除' });
+    const removed = await db.runTransaction(async ({ run, all }) => {
+      const items = await all(
+        'SELECT COUNT(*) as c FROM report_items WHERE order_no = ? AND proc_code = ?',
+        [orderNo, procCode]);
+      await run('DELETE FROM report_items WHERE order_no = ? AND proc_code = ?',
+        [orderNo, procCode]);
+      const orphans = await run(`
+        DELETE FROM reports
+        WHERE voided = 1
+          AND NOT EXISTS (SELECT 1 FROM report_items ri WHERE ri.report_id = reports.id)
+      `);
+      await run('DELETE FROM processes WHERE order_no = ? AND proc_code = ?',
+        [orderNo, procCode]);
+      return { items: items[0].c, reports: orphans.changes };
+    });
+
+    const extra = removed.items ? `，同时清理了 ${removed.items} 条已作废的上报明细` : '';
+    res.json({ ok: true, message: `工序已删除${extra}` });
   } catch (err) {
     console.error('删除工序失败:', err);
     res.status(500).json({ ok: false, error: '服务器错误' });
